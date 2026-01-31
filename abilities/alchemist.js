@@ -2,15 +2,18 @@
 (function() {
   const makeCatalyze = () => ({
     name: "Catalyze",
-    desc: "Select a 3x3 area to damage enemies.",
+    desc: "Select a 3x3 area to damage enemies (3x3 radius).",
     range: 0,
     rangePattern: "select",
     damage: 3,
     requiresTarget: true,
     computeTargets(game, unit) {
       const res = [];
-      for (let r = 0; r < Config.ROWS; r++) {
-        for (let c = 0; c < Config.COLS; c++) {
+      const maxBox = 1;
+      for (let dr = -maxBox; dr <= maxBox; dr++) {
+        for (let dc = -maxBox; dc <= maxBox; dc++) {
+          const r = unit.row + dr, c = unit.col + dc;
+          if (!game.inBounds(r, c)) continue;
           res.push([r, c]);
         }
       }

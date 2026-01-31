@@ -191,6 +191,10 @@ body {
   border-color: #a855f7;
   animation: pulse-purple 1s ease-in-out infinite;
 }
+.cell.ability-range-max {
+  box-shadow: 0 0 0 2px rgba(168,85,247,0.45);
+  border-color: rgba(168,85,247,0.45);
+}
 .cell.ability-anim {
   box-shadow: 0 0 0 2px #a855f7aa, 0 0 12px rgba(168, 85, 247, 0.7);
   border-color: #a855f7;
@@ -257,6 +261,12 @@ body {
     padding: 14px;
   }
 }
+@media (max-width: 900px) {
+  :root { --side-width: 340px; }
+}
+@media (max-width: 740px) {
+  :root { --side-width: 280px; }
+}
 .side .panel {
   width: var(--side-width);
   height: var(--grid-size);
@@ -270,6 +280,7 @@ body {
   gap: 8px;
   overflow-y: auto;
 }
+.side.left { display: flex; flex-direction: column; gap: 10px; }
 .panel-title {
   font-weight: 600;
 }

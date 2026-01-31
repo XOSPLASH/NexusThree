@@ -2,13 +2,13 @@
 (function() {
   const makeConstruct = () => ({
     name: "Construct",
-    desc: "Build wall/bridge or clear wall",
+    desc: "Build wall/bridge or clear wall (2x2 area)",
     range: 0,
     rangePattern: "select",
     requiresTarget: true,
     computeTargets(game, unit) {
       const res = [];
-      const maxBox = 4;
+      const maxBox = 1;
       for (let dr = -maxBox; dr <= maxBox; dr++) {
         for (let dc = -maxBox; dc <= maxBox; dc++) {
           const r = unit.row + dr, c = unit.col + dc;
@@ -19,8 +19,8 @@
       return res;
     },
     perform(game, unit, r, c) {
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
+      for (let dr = 0; dr <= 1; dr++) {
+        for (let dc = 0; dc <= 1; dc++) {
           const rr = r + dr, cc = c + dc;
           if (!game.inBounds(rr, cc)) continue;
           const terr = game.terrain[rr][cc];

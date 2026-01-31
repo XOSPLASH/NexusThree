@@ -86,8 +86,10 @@ class Game {
       const u = this.abilityMode.unit;
       this.board.markSelected(u.row, u.col);
       const area = [];
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
+      const size = (this.abilityMode.def.name === "Construct") ? 2 : 3;
+      const half = Math.floor(size / 2);
+      for (let dr = -half; dr <= (size - half - 1); dr++) {
+        for (let dc = -half; dc <= (size - half - 1); dc++) {
           const rr = r + dr, cc = c + dc;
           if (!this.inBounds(rr, cc)) continue;
           area.push([rr, cc]);
@@ -239,8 +241,9 @@ class Game {
           const liA = document.createElement("li"); liA.textContent = `Area: Adjacent enemies`;
           inner.appendChild(liA);
         }
+        const cap = pattern.charAt(0).toUpperCase() + pattern.slice(1);
         const liR = document.createElement("li"); liR.textContent = (pattern.toLowerCase() === "select") ? `Range: Select` : `Range: ${rng}`;
-        const liP = document.createElement("li"); liP.textContent = `Pattern: ${pattern}`;
+        const liP = document.createElement("li"); liP.textContent = `Pattern: ${cap}`;
         const liC = document.createElement("li"); liC.textContent = `Cooldown: ${cd}`;
         inner.appendChild(liR); inner.appendChild(liP); inner.appendChild(liC);
         li.appendChild(title);
@@ -478,7 +481,8 @@ class Game {
       seen.add(k);
       uniq.push([r, c]);
     }
-    this.board.markPositions(uniq, "ability-hl");
+    const cls = (pattern === "select") ? "ability-range-max" : "ability-hl";
+    this.board.markPositions(uniq, cls);
   }
 
   getChargeTargets(unit) {
@@ -555,6 +559,7 @@ class Game {
             this.board.clearMarks();
             this.renderEntities();
             this.updateHUD();
+            this.renderBuyControls();
             this.updateUnitPanel(u);
             return;
           }
@@ -1189,18 +1194,17 @@ Game.prototype.renderBuyControls = function() {
     header.addEventListener("click", () => {
       list.style.display = list.style.display === "none" ? "block" : "none";
     });
-    groups[c].forEach(t => {
+    const remaining = groups[c].filter(t => {
+      const hasType = this.entities.some(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER && e.type === t);
+      return !hasType;
+    });
+    remaining.forEach(t => {
       const def = Entities.unitDefs[t];
       const item = document.createElement("button");
       item.type = "button";
       item.className = "unit-item";
-      const hasType = this.entities.some(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER && e.type === t);
       item.textContent = `${t} — HP ${def.hp} DMG ${def.dmg} RNG ${def.range} MOV ${def.move} • Cost ${def.cost}`;
       item.title = def.ability;
-      if (hasType) {
-        item.disabled = true;
-        item.classList.add("disabled");
-      }
       item.addEventListener("click", () => {
         if (this.buySelection && this.buySelection.type === t) {
           this.buySelection = null;
@@ -1232,6 +1236,7 @@ Game.prototype.renderBuyControls = function() {
       });
       list.appendChild(item);
     });
+    if (list.childElementCount === 0) return;
     group.appendChild(header);
     group.appendChild(list);
     frag.appendChild(group);
