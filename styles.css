@@ -267,6 +267,12 @@ body {
 @media (max-width: 740px) {
   :root { --side-width: 280px; }
 }
+@media (orientation: landscape) and (max-height: 460px) {
+  :root {
+    --grid-size: min(100vh - 140px, calc(100vw - (var(--side-width) * 2 + var(--layout-gap) * 4)));
+  }
+  .side .panel { height: var(--grid-size); }
+}
 .side .panel {
   width: var(--side-width);
   height: var(--grid-size);

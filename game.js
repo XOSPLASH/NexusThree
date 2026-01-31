@@ -85,6 +85,8 @@ class Game {
       this.board.clearMarks();
       const u = this.abilityMode.unit;
       this.board.markSelected(u.row, u.col);
+      const maxTargets = (this.abilityMode && this.abilityMode.targets) || [];
+      if (maxTargets.length) this.board.markPositions(maxTargets, "ability-range-max");
       const area = [];
       const size = (this.abilityMode.def.name === "Construct") ? 2 : 3;
       const half = Math.floor(size / 2);
@@ -483,6 +485,8 @@ class Game {
     }
     const cls = (pattern === "select") ? "ability-range-max" : "ability-hl";
     this.board.markPositions(uniq, cls);
+    if (!this.abilityMode) this.abilityMode = { unit, def };
+    this.abilityMode.targets = uniq;
   }
 
   getChargeTargets(unit) {

@@ -33,7 +33,7 @@ class Board {
 
   clearMarks() {
     this.forEachCell(cell => {
-      cell.classList.remove("selected", "move-hl", "attack-hl", "heal-hl", "ability-hl", "attack-range-hl", "selected-player", "selected-enemy", "selected-empty", "buy-hl");
+      cell.classList.remove("selected", "move-hl", "attack-hl", "heal-hl", "ability-hl", "ability-range-max", "attack-range-hl", "selected-player", "selected-enemy", "selected-empty", "buy-hl");
     });
   }
 

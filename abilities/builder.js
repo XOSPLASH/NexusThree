@@ -3,12 +3,12 @@
   const makeConstruct = () => ({
     name: "Construct",
     desc: "Build wall/bridge or clear wall (2x2 area)",
-    range: 0,
+    range: 4,
     rangePattern: "select",
     requiresTarget: true,
     computeTargets(game, unit) {
       const res = [];
-      const maxBox = 1;
+      const maxBox = Math.max(0, this.range || unit.range || 0);
       for (let dr = -maxBox; dr <= maxBox; dr++) {
         for (let dc = -maxBox; dc <= maxBox; dc++) {
           const r = unit.row + dr, c = unit.col + dc;
