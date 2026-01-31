@@ -3,7 +3,7 @@
   const makeHeal = () => ({
     name: "Heal",
     desc: "Heal all adjacent allies.",
-    range: 1,
+    range: 2,
     rangePattern: "square",
     heal: 2,
     requiresTarget: false,

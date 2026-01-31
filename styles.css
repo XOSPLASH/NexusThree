@@ -295,8 +295,8 @@ body {
 .log-list .small { color: var(--muted); }
 /* Right-side panels stacked: shrink log, add buy */
 .side.right { display: flex; flex-direction: column; gap: 8px; }
-#log-panel { height: calc(var(--grid-size) * 0.60); }
-#buy-panel { height: calc(var(--grid-size) * 0.40); }
+#log-panel { height: calc(var(--grid-size) * 0.50); }
+#buy-panel { height: calc(var(--grid-size) * 0.50); }
 /* Yellow highlight for buy placement */
 .cell.buy-hl { box-shadow: 0 0 0 2px #f59e0b66; border-color: #f59e0b; }
 
@@ -343,9 +343,8 @@ body {
 .side.right #buy-cancel {
   margin-top: 10px;
 }
-.side.left #unit-panel {
-  height: var(--grid-size);
-}
+.side.left #unit-panel { height: calc(var(--grid-size) * 0.55); }
+.side.left #abilities-panel { height: calc(var(--grid-size) * 0.45); }
 
 .btn-primary { background: #2563eb; border-color: #1e40af; }
 .btn-primary:hover { background: #1d4ed8; }

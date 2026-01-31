@@ -136,7 +136,7 @@ class Game {
       abilBtn.id = "ability-btn";
       abilBtn.className = "btn btn-primary";
       abilBtn.style.marginTop = "6px";
-      const panel = document.getElementById("unit-panel");
+      const panel = document.getElementById("abilities-panel");
       if (panel) panel.appendChild(abilBtn);
     }
     if (!iconEl || !nameEl || !descEl || !statsEl || !abilEl) return;
@@ -191,6 +191,8 @@ class Game {
       ["Damage", `${ent.dmg}`],
       ["Range", `${ent.range}`],
       ["Move", `${ent.move}`],
+      ["Movement", `${((ent.movePattern || "orthogonal").charAt(0).toUpperCase() + (ent.movePattern || "orthogonal").slice(1))}`],
+      ["Range Pattern", `${((ent.rangePattern || "square").charAt(0).toUpperCase() + (ent.rangePattern || "square").slice(1))}`],
       ["AP", ent.kind === "unit" ? `${ent.ap}/${ent.apMax}` : "—"],
       ["Defense", "0"],
     ];
@@ -295,7 +297,7 @@ class Game {
     const pattern = (unit.rangePattern || "square").toLowerCase();
     if (pattern === "orthogonal" || pattern === "manhattan") return a + b;
     if (pattern === "circle" || pattern === "euclidean") return Math.sqrt(dr * dr + dc * dc);
-    if (pattern === "straight") return (a === 0 || b === 0) ? Math.max(a, b) : Infinity;
+    if (pattern === "straight" || pattern === "thrower") return (a === 0 || b === 0) ? Math.max(a, b) : Infinity;
     return Math.max(a, b);
   }
 
@@ -390,6 +392,8 @@ class Game {
       const dist = this.distanceByPattern(unit, ent.row - unit.row, ent.col - unit.col);
       if (dist <= unit.range) res.push([ent.row, ent.col]);
     }
+    const isThrower = ((unit.rangePattern || "").toLowerCase() === "thrower");
+    if (isThrower) return res;
     return res.filter(([tr, tc]) => this.hasLineOfSight(unit.row, unit.col, tr, tc));
   }
 
@@ -430,7 +434,8 @@ class Game {
         if (dr === 0 && dc === 0) continue;
         const dist = this.distanceByPattern(unit, dr, dc);
         if (dist <= unit.range) {
-          if (this.hasLineOfSight(unit.row, unit.col, r, c)) res.push([r, c]);
+          const isThrower = ((unit.rangePattern || "").toLowerCase() === "thrower");
+          if (isThrower || this.hasLineOfSight(unit.row, unit.col, r, c)) res.push([r, c]);
         }
       }
     }
@@ -825,27 +830,34 @@ class Game {
             }
           }
           if (u.type === "Builder" && ((u.abilityCooldowns["Construct"] || 0) === 0)) {
+            const def = (window.Abilities && window.Abilities.Builder && window.Abilities.Builder[0]);
             const playerBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.PLAYER);
-            const adj = [[1,0],[-1,0],[0,1],[0,-1]].map(([dr,dc]) => [u.row+dr,u.col+dc]).filter(([r,c]) => this.inBounds(r,c));
-            const toward = this.stepToward(u.row, u.col, playerBase.row, playerBase.col, u);
-            let acted = false;
-            for (const [r,c] of adj) {
-              const terr = this.terrain[r][c];
-              if (terr === "water" || terr === "wall") {
-                const dNow = Math.abs(playerBase.row - u.row) + Math.abs(playerBase.col - u.col);
-                const dIfPlain = Math.abs(playerBase.row - r) + Math.abs(playerBase.col - c);
-                if (dIfPlain <= dNow) {
-                  const def = (window.Abilities && window.Abilities.Builder && window.Abilities.Builder[0]);
-                  if (def) def.perform(this, u, r, c);
-                  u.ap -= 1;
-                  u.abilityCooldowns["Construct"] = (u.abilityCooldowns["Construct"] || 0) + 2;
-                  this.logEvent({ type: "ability", caster: `AI Builder`, ability: "Construct" });
-                  acted = true;
-                  break;
+            if (def) {
+              const targets = def.computeTargets(this, u);
+              const candidates = [];
+              for (const [r,c] of targets) {
+                let blocks = 0;
+                for (let dr = -1; dr <= 1; dr++) {
+                  for (let dc = -1; dc <= 1; dc++) {
+                    const rr = r + dr, cc = c + dc;
+                    if (!this.inBounds(rr, cc)) continue;
+                    const terr = this.terrain[rr][cc];
+                    if (terr === "water" || terr === "wall") blocks++;
+                  }
+                }
+                if (blocks > 0) {
+                  const dNow = Math.abs(playerBase.row - u.row) + Math.abs(playerBase.col - u.col);
+                  const dCent = Math.abs(playerBase.row - r) + Math.abs(playerBase.col - c);
+                  candidates.push({ r, c, blocks, dCent, dNow });
                 }
               }
+              candidates.sort((a, b) => (b.blocks - a.blocks) || (a.dCent - b.dCent));
+              const pick = candidates[0];
+              if (pick) {
+                def.perform(this, u, pick.r, pick.c);
+                continue;
+              }
             }
-            if (acted) continue;
           }
         }
         const attackables = this.getAttackTargets(u)
