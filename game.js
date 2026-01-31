@@ -1,0 +1,1234 @@
+// Game: owns state, rendering of tokens, interactions, AI, and win condition
+class Game {
+  constructor(board) {
+    this.board = board;
+    this.turn = Config.TEAM.PLAYER;
+    this.selected = null;
+    this.abilityMode = null;
+    this.buySelection = null;
+    this.overlay = null;
+    this.occupants = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
+    this.terrain = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
+    this.entities = [];
+    this.log = [];
+    this.energy = { [Config.TEAM.PLAYER]: Config.ENERGY_START_PLAYER, [Config.TEAM.AI]: Config.ENERGY_START_AI };
+    this.energyGenerated = { [Config.TEAM.PLAYER]: Config.ENERGY_START_PLAYER, [Config.TEAM.AI]: Config.ENERGY_START_AI };
+    this.energyGain = { [Config.TEAM.PLAYER]: Config.ENERGY_START_GAIN, [Config.TEAM.AI]: Config.ENERGY_START_GAIN };
+    this.init();
+  }
+
+  init() {
+    const [pPos, aPos] = this.pickMirroredBasePositions();
+    this.addEntity(Entities.makeBase(Config.TEAM.PLAYER, pPos[0], pPos[1]));
+    this.addEntity(Entities.makeBase(Config.TEAM.AI, aPos[0], aPos[1]));
+
+    this.generateTerrain();
+
+    this.renderEntities();
+    this.attachEvents();
+    this.updateHUD();
+    this.updateUnitPanel(null);
+    this.renderLog();
+    this.ensureOverlay();
+    this.renderBuyControls();
+  }
+
+  addEntity(ent) {
+    this.entities.push(ent);
+    this.occupants[ent.row][ent.col] = ent;
+  }
+
+  renderEntities() {
+    this.board.forEachCell(cell => {
+      cell.innerHTML = "";
+      cell.style.borderColor = "";
+    });
+    // Terrain tokens
+    for (let r = 0; r < Config.ROWS; r++) {
+      for (let c = 0; c < Config.COLS; c++) {
+        const t = this.terrain[r][c];
+        if (!t) continue;
+        const cell = this.board.getCell(r, c);
+        if (!cell) continue;
+        const span = document.createElement("span");
+        span.className = "token";
+        span.textContent = t === "wall" ? "🧱" : (t === "water" ? "🌊" : (t === "fortwall" ? "🗿" : "🌉"));
+        cell.appendChild(span);
+      }
+    }
+    // Units and bases
+    for (const ent of this.entities) {
+      const cell = this.board.getCell(ent.row, ent.col);
+      if (!cell) continue;
+      const span = document.createElement("span");
+      span.className = "token";
+      span.textContent = ent.symbol;
+      cell.appendChild(span);
+    }
+  }
+
+  attachEvents() {
+    const gridEl = this.board.mountEl;
+    gridEl.addEventListener("click", (e) => {
+      const target = e.target.closest(".cell");
+      if (!target) return;
+      const r = Number(target.dataset.row);
+      const c = Number(target.dataset.col);
+      this.onCellClicked(r, c);
+    });
+    document.body.addEventListener("click", (e) => {
+      if (!e.target.closest(".cell") &&
+          !e.target.closest(".turnbar") &&
+          !e.target.closest(".side") &&
+          !e.target.closest(".btn") &&
+          !e.target.closest(".app-header")) {
+        this.deselect();
+      }
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") this.deselect();
+    });
+    const endBtn = document.getElementById("end-turn");
+    if (endBtn) endBtn.addEventListener("click", () => this.endPlayerTurn());
+    try {
+      this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch {}
+  }
+
+  updateHUD() {
+    const turnEl = document.getElementById("turn-indicator");
+    if (turnEl) {
+      const p = this.energy[Config.TEAM.PLAYER];
+      const a = this.energy[Config.TEAM.AI];
+      const max = Config.ENERGY_MAX_TOTAL;
+      turnEl.textContent = `Turn: ${this.turn === Config.TEAM.PLAYER ? "Player" : "AI"} • Energy P: ${p}/${max} • AI: ${a}/${max}`;
+    }
+  }
+
+  updateUnitPanel(ent) {
+    const iconEl = document.getElementById("unit-icon");
+    const nameEl = document.getElementById("unit-name");
+    const descEl = document.getElementById("unit-desc");
+    const statsEl = document.getElementById("stats-list");
+    const abilEl = document.getElementById("abilities-list");
+    let abilBtn = document.getElementById("ability-btn");
+    if (!abilBtn) {
+      abilBtn = document.createElement("button");
+      abilBtn.id = "ability-btn";
+      abilBtn.className = "btn btn-primary";
+      abilBtn.style.marginTop = "6px";
+      const panel = document.getElementById("unit-panel");
+      if (panel) panel.appendChild(abilBtn);
+    }
+    if (!iconEl || !nameEl || !descEl || !statsEl || !abilEl) return;
+    statsEl.innerHTML = "";
+    abilEl.innerHTML = "";
+    abilBtn.style.display = "none";
+
+    if (!ent) {
+      iconEl.textContent = "—";
+      nameEl.textContent = "None selected";
+      descEl.textContent = "Select a tile or unit to view details.";
+      return;
+    }
+    if (ent.kind === "tile") {
+      iconEl.textContent = "□";
+      nameEl.textContent = `Empty Tile`;
+      descEl.textContent = `Coordinates: (${ent.row}, ${ent.col})`;
+        const terrName = ent.terrain === "wall" ? "Wall"
+          : ent.terrain === "water" ? "Water"
+          : ent.terrain === "fortwall" ? "Fortified Wall"
+          : ent.terrain === "bridge" ? "Bridge"
+          : "Plain";
+        const stats = [
+          ["Terrain", terrName],
+        ];
+      for (const [k, v] of stats) {
+        const li = document.createElement("li"); li.textContent = `${k}: ${v}`; statsEl.appendChild(li);
+      }
+      const ab = document.createElement("li"); ab.textContent = "No active abilities"; abilEl.appendChild(ab);
+      return;
+    }
+    if (ent.kind === "base") {
+      iconEl.textContent = ent.symbol;
+      nameEl.textContent = `${ent.team === Config.TEAM.PLAYER ? "Player" : "AI"} Base`;
+      descEl.textContent = "Your base. If its HP reaches 0, you lose.";
+      const stats = [
+        ["HP", `${ent.hp}/${ent.maxHp}`],
+        ["Defense", "0"],
+      ];
+      for (const [k, v] of stats) {
+        const li = document.createElement("li"); li.textContent = `${k}: ${v}`; statsEl.appendChild(li);
+      }
+      const ab = document.createElement("li"); ab.textContent = "No active abilities"; abilEl.appendChild(ab);
+      return;
+    }
+    const def = Entities.unitDefs[ent.type];
+    iconEl.textContent = ent.symbol;
+    nameEl.textContent = `${ent.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${ent.type}`;
+    descEl.textContent = def.ability;
+    const stats = [
+      ["HP", `${ent.hp}/${ent.maxHp}`],
+      ["Damage", `${ent.dmg}`],
+      ["Range", `${ent.range}`],
+      ["Move", `${ent.move}`],
+      ["AP", ent.kind === "unit" ? `${ent.ap}/${ent.apMax}` : "—"],
+      ["Defense", "0"],
+    ];
+    for (const [k, v] of stats) {
+      const li = document.createElement("li");
+      if (k === "AP" && ent.kind === "unit") {
+        const pips = Array.from({ length: ent.apMax }, (_, i) => `<span class="ap-pip${i < ent.ap ? '' : ' used'}"></span>`).join('');
+        li.innerHTML = `AP: ${v} <span class="ap-pips">${pips}</span>`;
+      } else {
+        li.textContent = `${k}: ${v}`;
+      }
+      statsEl.appendChild(li);
+    }
+    const abilities = (window.Abilities && window.Abilities[ent.type]) || [];
+    if (abilities.length === 0) {
+      const sub = document.createElement("div");
+      sub.className = "ability-subpanel";
+      const p = document.createElement("div"); p.textContent = "No active abilities";
+      sub.appendChild(p);
+      abilEl.appendChild(sub);
+    } else {
+      for (const a of abilities) {
+        const li = document.createElement("li");
+        const title = document.createElement("div");
+        title.className = "unit-name";
+        title.textContent = a.name;
+        const desc = document.createElement("div");
+        desc.className = "unit-desc";
+        desc.textContent = a.desc;
+        const inner = document.createElement("ul");
+        inner.className = "list";
+        const cd = (ent.abilityCooldowns && ent.abilityCooldowns[a.name]) || 0;
+        const rng = (typeof a.range === "number" && a.range > 0) ? a.range : ent.range;
+        const pattern = (a.rangePattern || "radius");
+        if (typeof a.damage === "number") {
+          const liD = document.createElement("li"); liD.textContent = `Damage: ${a.damage}`;
+          inner.appendChild(liD);
+        }
+        if (typeof a.heal === "number") {
+          const liH = document.createElement("li"); liH.textContent = `Heal: ${a.heal}`;
+          inner.appendChild(liH);
+        }
+        if (a.name === "Whirlwind") {
+          const liA = document.createElement("li"); liA.textContent = `Area: Adjacent enemies`;
+          inner.appendChild(liA);
+        }
+        const liR = document.createElement("li"); liR.textContent = `Range: ${rng}`;
+        const liP = document.createElement("li"); liP.textContent = `Pattern: ${pattern}`;
+        const liC = document.createElement("li"); liC.textContent = `Cooldown: ${cd}`;
+        inner.appendChild(liR); inner.appendChild(liP); inner.appendChild(liC);
+        li.appendChild(title);
+        li.appendChild(desc);
+        li.appendChild(inner);
+        abilEl.appendChild(li);
+      }
+      if (ent.team === Config.TEAM.PLAYER) {
+        const def = abilities[0];
+        const cd = (ent.abilityCooldowns && ent.abilityCooldowns[def.name]) || 0;
+        const isAiming = !!(this.abilityMode && this.abilityMode.unit === ent && this.abilityMode.def && this.abilityMode.def.name === def.name);
+        abilBtn.style.display = "inline-block";
+        if (isAiming) {
+          abilBtn.textContent = "Cancel Ability";
+          abilBtn.className = "btn btn-danger";
+          abilBtn.disabled = false;
+          abilBtn.onclick = () => {
+            this.abilityMode = null;
+            this.board.clearMarks();
+            this.updateUnitPanel(ent);
+          };
+        } else {
+          abilBtn.textContent = cd > 0 ? "Ability Cooling Down" : "Use Ability";
+          abilBtn.className = "btn btn-primary";
+          abilBtn.disabled = cd > 0 || ent.ap < 1;
+          abilBtn.onclick = () => {
+            if (((ent.abilityCooldowns && ent.abilityCooldowns[def.name]) || 0) > 0) return;
+            if (ent.ap < 1) return;
+            this.abilityMode = { unit: ent, def };
+            if (def.requiresTarget) {
+              this.showAbilityHints(ent, def);
+            } else {
+              def.perform(this, ent);
+              this.abilityMode = null;
+              this.renderEntities();
+              this.board.clearMarks();
+              this.updateHUD();
+              this.updateUnitPanel(ent);
+              if (ent.ap > 0) this.showActionHints(ent);
+              this.checkWin();
+            }
+            // Reflect button state change immediately
+            this.updateUnitPanel(ent);
+          };
+        }
+      }
+    }
+  }
+
+  inBounds(r, c) { return r >= 0 && c >= 0 && r < Config.ROWS && c < Config.COLS; }
+
+  distanceByPattern(unit, dr, dc) {
+    const a = Math.abs(dr), b = Math.abs(dc);
+    const pattern = (unit.rangePattern || "square").toLowerCase();
+    if (pattern === "orthogonal" || pattern === "manhattan") return a + b;
+    if (pattern === "circle" || pattern === "euclidean") return Math.sqrt(dr * dr + dc * dc);
+    if (pattern === "straight") return (a === 0 || b === 0) ? Math.max(a, b) : Infinity;
+    return Math.max(a, b);
+  }
+
+  getPatternTiles(unit, range, pattern) {
+    const res = [];
+    const p = (pattern || "radius").toLowerCase();
+    if (p === "straight") {
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      for (const [dr, dc] of dirs) {
+        for (let s = 1; s <= range; s++) {
+          const r = unit.row + dr * s, c = unit.col + dc * s;
+          if (!this.inBounds(r, c)) break;
+          res.push([r, c]);
+        }
+      }
+      return res;
+    }
+    for (let dr = -range; dr <= range; dr++) {
+      for (let dc = -range; dc <= range; dc++) {
+        const r = unit.row + dr, c = unit.col + dc;
+        if (!this.inBounds(r, c)) continue;
+        if (dr === 0 && dc === 0) continue;
+        const dist = p === "orthogonal" ? Math.abs(dr) + Math.abs(dc) : Math.max(Math.abs(dr), Math.abs(dc));
+        if (dist <= range) res.push([r, c]);
+      }
+    }
+    return res;
+  }
+
+  showActionHints(unit) {
+    this.board.clearMarks();
+    this.board.markSelected(unit.row, unit.col);
+    const selCell = this.board.getCell(unit.row, unit.col);
+    if (selCell) selCell.classList.add(unit.team === Config.TEAM.PLAYER ? "selected-player" : "selected-enemy");
+
+    const isPlayerUnit = unit.team === Config.TEAM.PLAYER;
+    const attackRange = this.getAttackRangeTiles(unit);
+    const attacks = this.getAttackTargets(unit);
+    this.board.markPositions(attackRange, "attack-range-hl");
+    this.board.markPositions(attacks, "attack-hl");
+    if (isPlayerUnit) {
+      const moves = this.getMoveHintTiles(unit);
+      const heals = this.getHealTargets(unit);
+      this.board.markPositions(moves, "move-hl");
+      this.board.markPositions(heals, "heal-hl");
+    }
+  }
+
+  getMoveTargets(unit) {
+    if (unit.ap < 1) return [];
+    const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+    return this.getReachableTiles(unit, maxSteps);
+  }
+
+  getMoveHintTiles(unit) {
+    const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+    return this.getReachableTiles(unit, maxSteps);
+  }
+
+  getReachableTiles(unit, maxSteps) {
+    const q = [[unit.row, unit.col, 0]];
+    const seen = new Set([`${unit.row},${unit.col}`]);
+    const res = [];
+    while (q.length) {
+      const [r, c, d] = q.shift();
+      if (d >= maxSteps) continue;
+      const pattern = (unit.movePattern || "orthogonal").toLowerCase();
+      const deltas = pattern === "square"
+        ? [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
+        : [[1,0],[-1,0],[0,1],[0,-1]];
+      for (const [dr, dc] of deltas) {
+        const nr = r + dr, nc = c + dc;
+        const key = `${nr},${nc}`;
+        if (!this.inBounds(nr, nc)) continue;
+        if (seen.has(key)) continue;
+        const terr = this.terrain[nr][nc];
+        if (terr === "wall" || terr === "water" || terr === "fortwall") continue;
+        if (this.occupants[nr][nc] != null) continue;
+        seen.add(key);
+        res.push([nr, nc]);
+        q.push([nr, nc, d + 1]);
+      }
+    }
+    return res;
+  }
+
+  getAttackTargets(unit) {
+    if (unit.ap < 1) return [];
+    const res = [];
+    for (const ent of this.entities) {
+      if (ent.team === unit.team) continue;
+      const dist = this.distanceByPattern(unit, ent.row - unit.row, ent.col - unit.col);
+      if (dist <= unit.range) res.push([ent.row, ent.col]);
+    }
+    return res.filter(([tr, tc]) => this.hasLineOfSight(unit.row, unit.col, tr, tc));
+  }
+
+  hasLineOfSight(sr, sc, tr, tc) {
+    const cells = this.traceLineSupercover(sr, sc, tr, tc);
+    for (const [r, c] of cells) {
+      if (this.terrain[r][c] === "wall" || this.terrain[r][c] === "fortwall") return false;
+    }
+    return true;
+  }
+
+  traceLineSupercover(sr, sc, tr, tc) {
+    const seen = new Set();
+    const steps = Math.max(Math.abs(tr - sr), Math.abs(tc - sc)) * 2 + 1;
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const y = sr + (tr - sr) * t;
+      const x = sc + (tc - sc) * t;
+      const r1 = Math.round(y), c1 = Math.round(x);
+      const r2 = Math.floor(y), c2 = Math.floor(x);
+      const r3 = Math.ceil(y), c3 = Math.ceil(x);
+      [[r1, c1], [r2, c2], [r3, c3]].forEach(([r, c]) => {
+        if (!this.inBounds(r, c)) return;
+        if (r === tr && c === tc) return;
+        seen.add(`${r},${c}`);
+      });
+    }
+    return Array.from(seen).map(s => s.split(",").map(Number));
+  }
+
+  getAttackRangeTiles(unit) {
+    const res = [];
+    for (let dr = -unit.range; dr <= unit.range; dr++) {
+      for (let dc = -unit.range; dc <= unit.range; dc++) {
+        const r = unit.row + dr;
+        const c = unit.col + dc;
+        if (!this.inBounds(r, c)) continue;
+        if (dr === 0 && dc === 0) continue;
+        const dist = this.distanceByPattern(unit, dr, dc);
+        if (dist <= unit.range) {
+          if (this.hasLineOfSight(unit.row, unit.col, r, c)) res.push([r, c]);
+        }
+      }
+    }
+    return res;
+  }
+
+  getHealTargets(unit) {
+    if (unit.ap < 1) return [];
+    if (unit.type !== "Mage") return [];
+    const res = [];
+    const deltas = [ [1,0], [-1,0], [0,1], [0,-1] ];
+    for (const [dr, dc] of deltas) {
+      const r = unit.row + dr, c = unit.col + dc;
+      if (!this.inBounds(r, c)) continue;
+      const occ = this.occupants[r][c];
+      if (occ && occ.kind === "unit" && occ.team === unit.team && occ.hp < occ.maxHp) {
+        res.push([r, c]);
+      }
+    }
+    return res;
+  }
+
+  showAbilityHints(unit, def) {
+    this.board.clearMarks();
+    this.board.markSelected(unit.row, unit.col);
+    const tiles = [];
+    const baseRange = typeof def.range === "number" && def.range > 0 ? def.range : unit.range;
+    const pattern = def.rangePattern || "radius";
+    const area = this.getPatternTiles(unit, baseRange, pattern);
+    for (const [r, c] of area) tiles.push([r, c]);
+    const targets = def && typeof def.computeTargets === "function" ? def.computeTargets(this, unit) : [];
+    for (const [r, c] of targets) tiles.push([r, c]);
+    const uniq = [];
+    const seen = new Set();
+    for (const [r, c] of tiles) {
+      const k = `${r},${c}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      uniq.push([r, c]);
+    }
+    this.board.markPositions(uniq, "ability-hl");
+  }
+
+  getChargeTargets(unit) {
+    const res = [];
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (const [dr, dc] of dirs) {
+      let r = unit.row, c = unit.col;
+      for (let step = 0; step < 2; step++) {
+        r += dr; c += dc;
+        if (!this.inBounds(r, c)) break;
+        const terr = this.terrain[r][c];
+        if (terr === "wall" || terr === "water") break;
+        if (this.occupants[r][c] != null) break;
+        res.push([r, c]);
+      }
+    }
+    return res;
+  }
+
+  getSnipeTargets(unit) {
+    const res = [];
+    for (const ent of this.entities) {
+      if (ent.team === unit.team) continue;
+      const dist = this.distanceByPattern(unit, ent.row - unit.row, ent.col - unit.col);
+      if (dist <= unit.range + 1) res.push([ent.row, ent.col]);
+    }
+    return res;
+  }
+
+  getSmiteTargets(unit) {
+    const res = [];
+    for (const ent of this.entities) {
+      if (ent.team === unit.team) continue;
+      const dist = this.distanceByPattern(unit, ent.row - unit.row, ent.col - unit.col);
+      if (dist <= 2 && this.hasLineOfSight(unit.row, unit.col, ent.row, ent.col)) {
+        res.push([ent.row, ent.col]);
+      }
+    }
+    return res;
+  }
+
+  getAdjacentEnemyTiles(unit) {
+    const res = [];
+    const deltas = [[1,0],[-1,0],[0,1],[0,-1]];
+    for (const [dr, dc] of deltas) {
+      const r = unit.row + dr, c = unit.col + dc;
+      if (!this.inBounds(r, c)) continue;
+      const occ = this.occupants[r][c];
+      if (occ && occ.kind === "unit" && occ.team !== unit.team) res.push([r, c]);
+    }
+    return res;
+  }
+
+  onCellClicked(r, c) {
+    const clickedEnt = this.occupants[r][c];
+    const isPlayerTurn = this.turn === Config.TEAM.PLAYER;
+    if (this.isGameOver()) return;
+
+    if (isPlayerTurn && this.buySelection) {
+      const base = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.PLAYER);
+      if (base) {
+        const positions = this.getBuyPositions(Config.TEAM.PLAYER).map(JSON.stringify);
+        const key = JSON.stringify([r, c]);
+        if (positions.includes(key)) {
+          const type = this.buySelection.type;
+          const cost = this.buySelection.cost;
+          const hasType = this.entities.some(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER && e.type === type);
+          if (!hasType && this.spendEnergy(Config.TEAM.PLAYER, cost)) {
+            const u = Entities.makeUnit(Config.TEAM.PLAYER, type, r, c);
+            this.addEntity(u);
+            this.buySelection = null;
+            const cancelBtn = document.getElementById("buy-cancel");
+            if (cancelBtn) cancelBtn.style.display = "none";
+            this.board.clearMarks();
+            this.renderEntities();
+            this.updateHUD();
+            this.updateUnitPanel(u);
+            return;
+          }
+        }
+      }
+    }
+
+    if (this.abilityMode && this.abilityMode.unit && this.abilityMode.unit.team === Config.TEAM.PLAYER) {
+      const u = this.abilityMode.unit;
+      const def = this.abilityMode.def;
+      const key = JSON.stringify([r, c]);
+      const targets = def.requiresTarget ? (def.computeTargets(this, u).map(JSON.stringify)) : [];
+      if (!def.requiresTarget) {
+        def.perform(this, u);
+        this.abilityMode = null;
+      } else if (targets.includes(key)) {
+        def.perform(this, u, r, c);
+        const tar = this.board.getCell(r, c) || this.board.getCell(u.row, u.col);
+        if (tar) {
+          tar.classList.add("ability-anim");
+          setTimeout(() => tar.classList.remove("ability-anim"), 500);
+        }
+        this.playSfx && this.playSfx("ability");
+        this.abilityMode = null;
+      }
+      this.renderEntities();
+      this.board.clearMarks();
+      this.updateHUD();
+      this.updateUnitPanel(this.selected);
+      if (u.ap > 0) this.showActionHints(u);
+      this.checkWin();
+      return;
+    }
+    if (this.selected && clickedEnt === this.selected) {
+      this.deselect();
+      return;
+    }
+
+    if (isPlayerTurn) {
+      if (this.selected && this.selected.kind === "unit" && this.selected.team === Config.TEAM.PLAYER) {
+        const u = this.selected;
+        if (u.ap >= 1) {
+          const moveTargets = this.getMoveTargets(u).map(JSON.stringify);
+          const attackTargets = this.getAttackTargets(u).map(JSON.stringify);
+          const healTargets = this.getHealTargets(u).map(JSON.stringify);
+          const key = JSON.stringify([r, c]);
+          let actionTaken = false;
+          if (moveTargets.includes(key) && this.occupants[r][c] == null) {
+            this.moveUnit(u, r, c);
+            u.ap -= 1;
+            actionTaken = true;
+          } else if (attackTargets.includes(key) && this.occupants[r][c]) {
+            const target = this.occupants[r][c];
+            const alsoTargets = this.getAttackTargets(u)
+              .filter(([rr, cc]) => rr !== r || cc !== c)
+              .map(([rr, cc]) => this.occupants[rr][cc])
+              .filter(Boolean)
+              .map(t => `${t.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${t.kind === "unit" ? t.type : "Base"}`);
+            this.attack(u, target);
+            this.logEvent({ type: "attack", attacker: `${u.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${u.type}`,
+              target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}`,
+              dmg: u.dmg, alsoTargets });
+            u.ap -= 1;
+            actionTaken = true;
+          } else if (healTargets.includes(key) && this.occupants[r][c]) {
+            const ally = this.occupants[r][c];
+            this.heal(u, ally);
+            this.logEvent({ type: "ability", caster: `${u.team === Config.TEAM.PLAYER ? "Player" : "AI"} Mage`, ability: "Heal",
+              target: `${ally.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${ally.type}` });
+            u.ap -= 1;
+            actionTaken = true;
+          }
+          if (actionTaken) {
+            this.renderEntities();
+            this.board.clearMarks();
+            this.updateHUD();
+            this.updateUnitPanel(this.selected);
+            this.checkWin();
+            if (u.ap > 0) {
+              this.showActionHints(u);
+            } else {
+              this.board.markSelected(u.row, u.col);
+              const selCell = this.board.getCell(u.row, u.col);
+              if (selCell) selCell.classList.add("selected-player");
+            }
+            return;
+          }
+        }
+      }
+    }
+    this.board.clearMarks();
+    if (clickedEnt) {
+      this.abilityMode = null;
+      this.selected = clickedEnt;
+      this.updateHUD();
+      this.updateUnitPanel(clickedEnt);
+      const cell = this.board.getCell(r, c);
+      if (cell) {
+        cell.classList.add("selected");
+        cell.classList.add(clickedEnt.team === Config.TEAM.PLAYER ? "selected-player" : "selected-enemy");
+      }
+      if (clickedEnt.kind === "unit") this.showActionHints(clickedEnt);
+      return;
+    }
+    this.selected = { kind: "tile", row: r, col: c, terrain: this.terrain[r][c] };
+    this.updateUnitPanel(this.selected);
+    const cell = this.board.getCell(r, c);
+    if (cell) cell.classList.add("selected", "selected-empty");
+  }
+
+  deselect() {
+    this.selected = null;
+    this.abilityMode = null;
+    this.board.clearMarks();
+    this.updateUnitPanel(null);
+  }
+
+  moveUnit(unit, r, c) {
+    this.occupants[unit.row][unit.col] = null;
+    unit.row = r; unit.col = c;
+    this.occupants[r][c] = unit;
+  }
+
+  applyDamage(target, dmg, source) {
+    const before = target.hp;
+    target.hp = Math.max(0, target.hp - dmg);
+    const cell = this.board.getCell(target.row, target.col);
+    if (cell) {
+      cell.classList.add("hit-anim");
+      setTimeout(() => cell.classList.remove("hit-anim"), 360);
+    }
+    this.playSfx && this.playSfx("hit");
+    if (target.hp === 0 && before > 0) {
+      if (target.kind === "unit") {
+        const killer = source ? `${source.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${source.type}` : "Unknown";
+        const victim = `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.type}`;
+        this.logEvent({ type: "death", killer, victim });
+        this.entities = this.entities.filter(e => e !== target);
+        this.occupants[target.row][target.col] = null;
+      }
+    }
+  }
+
+  attack(attacker, target) {
+    this.applyDamage(target, attacker.dmg, attacker);
+  }
+
+  heal(mage, ally) {
+    if (mage.type !== "Mage") return;
+    ally.hp = Math.min(ally.maxHp, ally.hp + 2);
+    const cell = this.board.getCell(ally.row, ally.col);
+    if (cell) {
+      cell.classList.add("heal-anim");
+      setTimeout(() => cell.classList.remove("heal-anim"), 640);
+    }
+    this.playSfx && this.playSfx("heal");
+  }
+
+  endPlayerTurn() {
+    if (this.turn !== Config.TEAM.PLAYER) return;
+    this.selected = null;
+    this.abilityMode = null;
+    this.buySelection = null;
+    this.board.clearMarks();
+    const cancelBtn = document.getElementById("buy-cancel");
+    if (cancelBtn) cancelBtn.style.display = "none";
+    this.turn = Config.TEAM.AI;
+    this.updateHUD();
+    this.generateEnergy(Config.TEAM.AI);
+    for (const e of this.entities) if (e.team === Config.TEAM.AI && e.kind === "unit") e.ap = e.apMax;
+    this.tickCooldowns(Config.TEAM.AI);
+    this.runAI();
+    this.checkWin();
+    this.turn = Config.TEAM.PLAYER;
+    this.generateEnergy(Config.TEAM.PLAYER);
+    for (const e of this.entities) if (e.team === Config.TEAM.PLAYER && e.kind === "unit") e.ap = e.apMax;
+    this.tickCooldowns(Config.TEAM.PLAYER);
+    this.abilityMode = null;
+    this.updateHUD();
+  }
+
+  runAI() {
+    const aiBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.AI);
+    if (aiBase && window.Entities && window.Entities.unitDefs) {
+      const t = this.chooseAIPurchaseType();
+      if (t) {
+        const cost = window.Entities.unitDefs[t].cost || 0;
+        if (this.energy[Config.TEAM.AI] >= cost) {
+          if (this.spawnUnitNearBase(Config.TEAM.AI, t)) {
+            this.spendEnergy(Config.TEAM.AI, cost);
+          }
+        }
+      }
+    }
+    const playerBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.PLAYER);
+    const aiUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.AI);
+    const playerUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER);
+    const focus = playerUnits.length ? playerUnits.slice().sort((a, b) => a.hp - b.hp)[0] : playerBase;
+    for (const u of aiUnits) {
+      while (u.ap > 0) {
+        const healTargets = this.getHealTargets(u);
+        if (u.type === "Mage" && healTargets.length > 0) {
+          const [r, c] = healTargets[0];
+          const ally = this.occupants[r][c];
+          this.heal(u, ally);
+          u.ap -= 1;
+          this.logEvent({ type: "ability", caster: `AI Mage`, ability: "Heal", target: `AI ${ally.type}` });
+          continue;
+        }
+        if (u.ap >= 1) {
+          if (u.type === "Berserker" && ((u.abilityCooldowns["Whirlwind"] || 0) === 0)) {
+            const adj = this.getAdjacentEnemyTiles(u);
+            if (adj.length) {
+              for (const [rr, cc] of adj) {
+                const t = this.occupants[rr][cc];
+                if (t) this.applyDamage(t, u.dmg, u);
+              }
+              u.ap -= 1;
+              u.abilityCooldowns["Whirlwind"] = (u.abilityCooldowns["Whirlwind"] || 0) + 2;
+              this.logEvent({ type: "ability", caster: `AI Berserker`, ability: "Whirlwind" });
+              continue;
+            }
+          }
+          if (u.type === "Paladin" && ((u.abilityCooldowns["Smite"] || 0) === 0)) {
+            const smites = this.getSmiteTargets(u)
+              .map(([r, c]) => this.occupants[r][c])
+              .filter(Boolean);
+            if (smites.length) {
+              smites.sort((a, b) => {
+                const sa = (a.kind === "base" ? 100 : 0) + (a.maxHp - a.hp);
+                const sb = (b.kind === "base" ? 100 : 0) + (b.maxHp - b.hp);
+                return sb - sa;
+              });
+              const target = smites[0];
+              this.applyDamage(target, u.dmg + 1, u);
+              u.ap -= 1;
+              u.abilityCooldowns["Smite"] = (u.abilityCooldowns["Smite"] || 0) + 2;
+              this.logEvent({ type: "ability", caster: `AI Paladin`, ability: "Smite", target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
+              continue;
+            }
+          }
+          if (u.type === "Archer" && ((u.abilityCooldowns["Snipe"] || 0) === 0)) {
+            const snipes = this.getSnipeTargets(u)
+              .map(([r, c]) => this.occupants[r][c])
+              .filter(Boolean);
+            if (snipes.length) {
+              snipes.sort((a, b) => {
+                const sa = (a.kind === "base" ? 100 : 0) + (a.maxHp - a.hp);
+                const sb = (b.kind === "base" ? 100 : 0) + (b.maxHp - b.hp);
+                return sb - sa;
+              });
+              const target = snipes[0];
+              this.applyDamage(target, u.dmg + 1, u);
+              u.ap -= 1;
+              u.abilityCooldowns["Snipe"] = (u.abilityCooldowns["Snipe"] || 0) + 2;
+              this.logEvent({ type: "ability", caster: `AI Archer`, ability: "Snipe", target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
+              continue;
+            }
+          }
+          if (u.type === "Warrior" && ((u.abilityCooldowns["Charge"] || 0) === 0)) {
+            const charges = this.getChargeTargets(u);
+            if (charges.length) {
+              const best = charges
+                .map(([r, c]) => ({ r, c, d: Math.abs(focus.row - r) + Math.abs(focus.col - c) }))
+                .sort((a, b) => a.d - b.d)[0];
+              if (best) {
+                this.moveUnit(u, best.r, best.c);
+                u.ap -= 1;
+                u.abilityCooldowns["Charge"] = (u.abilityCooldowns["Charge"] || 0) + 2;
+                this.logEvent({ type: "ability", caster: `AI Warrior`, ability: "Charge" });
+                continue;
+              }
+            }
+          }
+          if (u.type === "Builder" && ((u.abilityCooldowns["Construct"] || 0) === 0)) {
+            const playerBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.PLAYER);
+            const adj = [[1,0],[-1,0],[0,1],[0,-1]].map(([dr,dc]) => [u.row+dr,u.col+dc]).filter(([r,c]) => this.inBounds(r,c));
+            const toward = this.stepToward(u.row, u.col, playerBase.row, playerBase.col, u);
+            let acted = false;
+            for (const [r,c] of adj) {
+              const terr = this.terrain[r][c];
+              if (terr === "water" || terr === "wall") {
+                const dNow = Math.abs(playerBase.row - u.row) + Math.abs(playerBase.col - u.col);
+                const dIfPlain = Math.abs(playerBase.row - r) + Math.abs(playerBase.col - c);
+                if (dIfPlain <= dNow) {
+                  const def = (window.Abilities && window.Abilities.Builder && window.Abilities.Builder[0]);
+                  if (def) def.perform(this, u, r, c);
+                  u.ap -= 1;
+                  u.abilityCooldowns["Construct"] = (u.abilityCooldowns["Construct"] || 0) + 2;
+                  this.logEvent({ type: "ability", caster: `AI Builder`, ability: "Construct" });
+                  acted = true;
+                  break;
+                }
+              }
+            }
+            if (acted) continue;
+          }
+        }
+        const attackables = this.getAttackTargets(u)
+          .map(([r, c]) => this.occupants[r][c])
+          .filter(Boolean);
+        if (attackables.length > 0) {
+          attackables.sort((a, b) => {
+            const sa = (a.kind === "base" ? 100 : 0) + (a.maxHp - a.hp);
+            const sb = (b.kind === "base" ? 100 : 0) + (b.maxHp - b.hp);
+            return sb - sa;
+          });
+          const target = attackables[0];
+          const alsoTargets = this.getAttackTargets(u)
+            .filter(([rr, cc]) => !(rr === target.row && cc === target.col))
+            .map(([rr, cc]) => this.occupants[rr][cc])
+            .filter(Boolean)
+            .map(t => `${t.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${t.kind === "unit" ? t.type : "Base"}`);
+          this.attack(u, target);
+          u.ap -= 1;
+          this.logEvent({ type: "attack", attacker: `AI ${u.type}`, target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}`, dmg: u.dmg, alsoTargets });
+          continue;
+        }
+        const nearestPlayer = playerUnits.slice().sort((a, b) => (Math.abs(a.row - u.row) + Math.abs(a.col - u.col)) - (Math.abs(b.row - u.row) + Math.abs(b.col - u.col)))[0];
+        if (u.hp <= 1 && nearestPlayer) {
+          const step = this.stepAway(u.row, u.col, nearestPlayer.row, nearestPlayer.col, u);
+          if (step) {
+            const [nr, nc] = step; if (this.occupants[nr][nc] == null) this.moveUnit(u, nr, nc);
+            u.ap -= 1;
+            continue;
+          }
+        }
+        const step = this.stepTowardSmart(u.row, u.col, focus.row, focus.col, u);
+        if (step) {
+          const [nr, nc] = step; if (this.occupants[nr][nc] == null) this.moveUnit(u, nr, nc);
+          u.ap -= 1;
+          continue;
+        }
+        break;
+      }
+    }
+    this.renderEntities();
+  }
+
+  stepToward(sr, sc, tr, tc, unit) {
+    const dummy = { row: sr, col: sc };
+    const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+    dummy.movePattern = unit.movePattern || "orthogonal";
+    const candidates = this.getReachableTiles(dummy, maxSteps);
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => ((Math.abs(tr - a[0]) + Math.abs(tc - a[1])) - (Math.abs(tr - b[0]) + Math.abs(tc - b[1]))));
+    return candidates[0] || null;
+  }
+
+  stepTowardSmart(sr, sc, tr, tc, unit) {
+    const dummy = { row: sr, col: sc };
+    const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+    dummy.movePattern = unit.movePattern || "orthogonal";
+    const candidates = this.getReachableTiles(dummy, maxSteps);
+    if (candidates.length === 0) return null;
+    const players = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER);
+    const scored = candidates.map(([nr, nc]) => {
+      let exp = 0;
+      for (const p of players) {
+        const dist = this.distanceByPattern(p, nr - p.row, nc - p.col);
+        if (dist <= p.range && this.hasLineOfSight(p.row, p.col, nr, nc)) exp++;
+      }
+      const d = Math.abs(tr - nr) + Math.abs(tc - nc);
+      return { cell: [nr, nc], exp, d };
+    }).sort((a, b) => (a.exp - b.exp) || (a.d - b.d));
+    return scored[0].cell;
+  }
+
+  stepAway(sr, sc, er, ec, unit) {
+    const dummy = { row: sr, col: sc };
+    const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+    dummy.movePattern = unit.movePattern || "orthogonal";
+    const candidates = this.getReachableTiles(dummy, maxSteps);
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => ((Math.abs(er - b[0]) + Math.abs(ec - b[1])) - (Math.abs(er - a[0]) + Math.abs(ec - a[1]))));
+    return candidates[0] || null;
+  }
+
+  checkWin() {
+    const pBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.PLAYER);
+    const aBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.AI);
+    if (pBase.hp <= 0) {
+      this.showOverlay("AI Wins! The player base was destroyed.");
+      this.logEvent({ type: "status", msg: "AI Wins!" });
+    } else if (aBase.hp <= 0) {
+      this.showOverlay("Player Wins! The AI base was destroyed.");
+      this.logEvent({ type: "status", msg: "Player Wins!" });
+    }
+  }
+
+  isGameOver() {
+    const o = this.overlay;
+    return o && !o.classList.contains("hidden");
+  }
+
+  ensureOverlay() {
+    let o = document.getElementById("game-overlay");
+    if (!o) {
+      o = document.createElement("div");
+      o.id = "game-overlay";
+      o.className = "overlay hidden";
+      o.innerHTML = `<div class="panel"><div id="overlay-msg"></div><button id="reset-btn" class="btn">Play Again</button></div>`;
+      document.body.appendChild(o);
+      const btn = o.querySelector("#reset-btn");
+      btn.addEventListener("click", () => location.reload());
+    }
+    this.overlay = o;
+  }
+
+  showOverlay(msg) {
+    const o = this.overlay; if (!o) return;
+    o.querySelector("#overlay-msg").textContent = msg;
+    o.classList.remove("hidden");
+  }
+
+  logEvent(event) {
+    const ts = new Date().toLocaleTimeString();
+    this.log.unshift({ ts, ...event });
+    this.renderLog();
+  }
+
+  renderLog() {
+    const list = document.getElementById("log-list");
+    if (!list) return;
+    list.innerHTML = "";
+    for (const e of this.log.slice(0, 5)) {
+      const li = document.createElement("li");
+      if (e.type === "attack") {
+        const also = e.alsoTargets && e.alsoTargets.length
+          ? ` <span class="small">(also in range: ${e.alsoTargets.join(", ")})</span>`
+          : "";
+        li.innerHTML = `${e.attacker} attacked ${e.target} for ${e.dmg} damage.${also}`;
+      } else if (e.type === "ability") {
+        li.innerHTML = `${e.caster} used ${e.ability}${e.target ? ` on ${e.target}` : ""}.`;
+      } else if (e.type === "death") {
+        li.innerHTML = `${e.killer} killed ${e.victim}.`;
+      } else if (e.type === "status") {
+        li.innerHTML = `${e.msg}`;
+      }
+      list.appendChild(li);
+    }
+  }
+
+  tickCooldowns(team) {
+    for (const e of this.entities) {
+      if (e.kind === "unit" && e.team === team && e.abilityCooldowns) {
+        for (const k of Object.keys(e.abilityCooldowns)) {
+          e.abilityCooldowns[k] = Math.max(0, e.abilityCooldowns[k] - 1);
+        }
+      }
+    }
+  }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  const mountEl = document.getElementById("grid");
+  const board = new Board(Config.ROWS, Config.COLS, mountEl);
+  const game = new Game(board);
+  window.board = board;
+  window.game = game;
+});
+ 
+// Terrain generation tuned for organic symmetric placement with density
+Game.prototype.generateTerrain = function() {
+  const totalTiles = Config.ROWS * Config.COLS;
+  let target = Math.floor(totalTiles * (Config.TERRAIN_DENSITY || 0.12));
+  if (target % 2 !== 0) target -= 1;
+  const pairsTarget = Math.max(0, Math.floor(target / 2));
+  let pairsPlaced = 0;
+  let safety = 0;
+  const centerBias = () => {
+    let sum = 0;
+    for (let i = 0; i < 6; i++) sum += Math.random();
+    return (sum / 6);
+  };
+
+Game.prototype.playSfx = function(kind) {
+  const ctx = this.audioCtx;
+  if (!ctx) return;
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = "sine";
+  o.frequency.value = kind === "hit" ? 320 : (kind === "heal" ? 520 : 420);
+  g.gain.value = 0.03;
+  o.connect(g).connect(ctx.destination);
+  o.start();
+  setTimeout(() => { o.stop(); o.disconnect(); g.disconnect(); }, 120);
+};
+  const edgeBiasIndex = (size) => {
+    const edgeSide = Math.random() < 0.5 ? 0 : size - 1;
+    const jitter = Math.round((Math.random() - 0.5) * size * 0.3);
+    return Math.min(size - 1, Math.max(0, edgeSide + jitter));
+  };
+  const blocked = new Set();
+  const pAdj = this.getBuyPositions(Config.TEAM.PLAYER);
+  const aAdj = this.getBuyPositions(Config.TEAM.AI);
+  for (const [r, c] of pAdj) blocked.add(`${r},${c}`);
+  for (const [r, c] of aAdj) blocked.add(`${r},${c}`);
+  while (pairsPlaced < pairsTarget && safety < 5000) {
+    safety++;
+    const useEdge = Math.random() < 0.65;
+    const r = useEdge ? edgeBiasIndex(Config.ROWS) : Math.min(Config.ROWS - 1, Math.max(0, Math.floor(centerBias() * Config.ROWS)));
+    const c = useEdge ? edgeBiasIndex(Config.COLS) : Math.min(Config.COLS - 1, Math.max(0, Math.floor(centerBias() * Config.COLS)));
+    const mr = Config.ROWS - 1 - r;
+    const mc = Config.COLS - 1 - c;
+    if (r === mr && c === mc) continue;
+    if (this.occupants[r][c] != null) continue;
+    if (this.occupants[mr][mc] != null) continue;
+    if (this.terrain[r][c] != null) continue;
+    if (this.terrain[mr][mc] != null) continue;
+    if (blocked.has(`${r},${c}`)) continue;
+    if (blocked.has(`${mr},${mc}`)) continue;
+    let neighborCount = 0;
+    for (const [dr, dc] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nr = r + dr, nc = c + dc;
+      if (this.inBounds(nr, nc) && this.terrain[nr][nc]) neighborCount++;
+    }
+    if (neighborCount > 2 && Math.random() < 0.6) continue;
+    const terr = Math.random() < 0.5 ? "wall" : "water";
+    this.terrain[r][c] = terr;
+    this.terrain[mr][mc] = terr;
+    pairsPlaced++;
+  }
+};
+
+Game.prototype.pickMirroredBasePositions = function() {
+  let tries = 0;
+  while (tries++ < 200) {
+    const r = Math.floor(Config.ROWS * 0.7) + Math.floor(Math.random() * Math.ceil(Config.ROWS * 0.3));
+    const c = Math.floor(Math.random() * Math.ceil(Config.COLS * 0.3));
+    if (!this.inBounds(r, c)) continue;
+    if (this.occupants[r][c] != null) continue;
+    const mr = Config.ROWS - 1 - r;
+    const mc = Config.COLS - 1 - c;
+    if (!this.inBounds(mr, mc)) continue;
+    if (this.occupants[mr][mc] != null) continue;
+    const d = Math.abs(mr - r) + Math.abs(mc - c);
+    if (d < Math.floor((Config.ROWS + Config.COLS) * 0.8)) continue;
+    return [[r, c], [mr, mc]];
+  }
+  return [[Config.ROWS - 1, 0], [0, Config.COLS - 1]];
+};
+
+Game.prototype.generateEnergy = function(team) {
+  const produced = this.energyGenerated[team];
+  const max = Config.ENERGY_MAX_TOTAL;
+  if (produced >= max) return;
+  const gain = this.energyGain[team];
+  const add = Math.min(gain, max - produced);
+  this.energy[team] += add;
+  this.energyGenerated[team] += add;
+  if (this.energyGain[team] < Config.ENERGY_GAIN_CAP) this.energyGain[team] += 1;
+  this.updateHUD();
+};
+
+Game.prototype.spendEnergy = function(team, amount) {
+  if (this.energy[team] < amount) return false;
+  this.energy[team] -= amount;
+  this.updateHUD();
+  return true;
+};
+
+Game.prototype.spawnUnitNearBase = function(team, type) {
+  if (this.entities.some(e => e.kind === "unit" && e.team === team && e.type === type)) return false;
+  const base = this.entities.find(e => e.kind === "base" && e.team === team);
+  if (!base) return false;
+  const res = [];
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const r = base.row + dr, c = base.col + dc;
+      if (!this.inBounds(r, c)) continue;
+      if (this.terrain[r][c]) continue;
+      if (this.occupants[r][c] != null) continue;
+      res.push([r, c]);
+    }
+  }
+  if (res.length === 0) return false;
+  const [r, c] = res[Math.floor(Math.random() * res.length)];
+  const u = Entities.makeUnit(team, type, r, c);
+  this.addEntity(u);
+  this.renderEntities();
+  return true;
+};
+
+Game.prototype.getBuyPositions = function(team) {
+  const base = this.entities.find(e => e.kind === "base" && e.team === team);
+  if (!base) return [];
+  const res = [];
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const r = base.row + dr, c = base.col + dc;
+      if (!this.inBounds(r, c)) continue;
+      if (this.terrain[r][c]) continue;
+      if (this.occupants[r][c] != null) continue;
+      res.push([r, c]);
+    }
+  }
+  return res;
+};
+
+Game.prototype.renderBuyControls = function() {
+  const wrap = document.getElementById("buy-controls");
+  if (!wrap || !window.Entities || !window.Entities.unitDefs) return;
+  const defs = window.Entities.unitDefs;
+  const groups = {};
+  Object.keys(defs).forEach(t => {
+    const c = defs[t].cost || 0;
+    if (!groups[c]) groups[c] = [];
+    groups[c].push(t);
+  });
+  const uniqCosts = Object.keys(groups).map(Number).sort((a, b) => a - b);
+  const frag = document.createDocumentFragment();
+  uniqCosts.forEach(c => {
+    const group = document.createElement("div");
+    group.className = "buy-group";
+    const header = document.createElement("button");
+    header.type = "button";
+    header.className = "group-header btn";
+    header.textContent = `Cost ${c}`;
+    const list = document.createElement("div");
+    list.className = "group-list";
+    list.style.display = "none";
+    header.addEventListener("click", () => {
+      list.style.display = list.style.display === "none" ? "block" : "none";
+    });
+    groups[c].forEach(t => {
+      const def = Entities.unitDefs[t];
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "unit-item";
+      const hasType = this.entities.some(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER && e.type === t);
+      item.textContent = `${t} — HP ${def.hp} DMG ${def.dmg} RNG ${def.range} MOV ${def.move} • Cost ${def.cost}`;
+      item.title = def.ability;
+      if (hasType) {
+        item.disabled = true;
+        item.classList.add("disabled");
+      }
+      item.addEventListener("click", () => {
+        if (this.buySelection && this.buySelection.type === t) {
+          this.buySelection = null;
+          this.board.clearMarks();
+          const cancelBtn = document.getElementById("buy-cancel");
+          if (cancelBtn) cancelBtn.style.display = "none";
+          this.updateUnitPanel(null);
+          item.classList.remove("selected");
+          return;
+        }
+        this.buySelection = { type: t, cost: def.cost };
+        const pos = this.getBuyPositions(Config.TEAM.PLAYER);
+        this.board.clearMarks();
+        this.board.markPositions(pos, "buy-hl");
+        const cancelBtn = document.getElementById("buy-cancel");
+        if (cancelBtn) cancelBtn.style.display = "inline-block";
+        document.querySelectorAll(".unit-item.selected").forEach(el => el.classList.remove("selected"));
+        item.classList.add("selected");
+        const preview = {
+          kind: "unit",
+          team: Config.TEAM.PLAYER,
+          type: t,
+          row: 0, col: 0,
+          hp: def.hp, maxHp: def.hp, dmg: def.dmg, range: def.range, move: def.move,
+          symbol: def.symbol, ability: def.ability, rangePattern: def.rangePattern, movePattern: def.movePattern || "orthogonal",
+          abilityCooldowns: {}, apMax: 2, ap: 2,
+        };
+        this.updateUnitPanel(preview);
+      });
+      list.appendChild(item);
+    });
+    group.appendChild(header);
+    group.appendChild(list);
+    frag.appendChild(group);
+  });
+  wrap.innerHTML = "";
+  wrap.appendChild(frag);
+  const cancelBtn = document.getElementById("buy-cancel");
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      this.buySelection = null;
+      this.board.clearMarks();
+      cancelBtn.style.display = "none";
+      document.querySelectorAll(".unit-item.selected").forEach(el => el.classList.remove("selected"));
+      this.updateUnitPanel(null);
+    };
+  }
+};
+
+Game.prototype.chooseAIPurchaseType = function() {
+  const defs = window.Entities.unitDefs;
+  const affordable = Object.keys(defs).filter(t => this.energy[Config.TEAM.AI] >= (defs[t].cost || 0));
+  if (affordable.length === 0) return null;
+  const aiUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.AI);
+  const playerUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER);
+  const uniqueAffordable = affordable.filter(t => !aiUnits.some(u => u.type === t));
+  const needHealer = aiUnits.some(u => u.hp < u.maxHp);
+  if (needHealer && uniqueAffordable.includes("Mage")) return "Mage";
+  const preferRanged = playerUnits.length === 0 || playerUnits.some(u => u.type === "Warrior");
+  const weights = { Warrior: 1, Archer: 2, Mage: 1, Paladin: 2, Berserker: 2, Builder: 2 };
+  if (preferRanged) { weights.Archer += 1; weights.Paladin += 1; }
+  const list = uniqueAffordable.flatMap(t => Array(weights[t]).fill(t));
+  return list[Math.floor(Math.random() * list.length)];
+};

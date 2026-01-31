@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NexusThree</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="config.js"></script>
+    <script defer src="board.js"></script>
+    <script defer src="entities.js"></script>
+    <script defer src="abilities/index.js"></script>
+    <script defer src="abilities/warrior.js"></script>
+    <script defer src="abilities/archer.js"></script>
+    <script defer src="abilities/mage.js"></script>
+    <script defer src="abilities/paladin.js"></script>
+    <script defer src="abilities/berserker.js"></script>
+    <script defer src="abilities/builder.js"></script>
+    <script defer src="game.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <h1 class="title">NexusThree</h1>
+    </header>
+
+    <main class="app-main">
+      <!-- Left: Unit Details Panel -->
+      <aside class="side left">
+        <div id="unit-panel" class="panel">
+          <div class="panel-title">Unit Details</div>
+          <div class="unit-header">
+            <div id="unit-icon" class="unit-icon">—</div>
+            <div>
+              <div id="unit-name" class="unit-name">None selected</div>
+              <div id="unit-desc" class="unit-desc">Select a unit to view details.</div>
+            </div>
+          </div>
+          <div class="panel-subtitle">Stats</div>
+          <ul id="stats-list" class="list"></ul>
+          <div class="panel-subtitle">Abilities</div>
+          <ul id="abilities-list" class="list"></ul>
+        </div>
+      </aside>
+
+      <!-- Center: Turn bar + Grid -->
+      <div class="center-wrap">
+        <div class="turnbar">
+          <div id="turn-indicator" class="turn">Turn: Player</div>
+          <button id="end-turn" class="btn btn-danger">End Turn</button>
+        </div>
+        <div id="grid" class="grid" aria-label="10 by 10 grid"></div>
+      </div>
+
+      <!-- Right: Game Log Panel -->
+      <aside class="side right">
+        <div id="log-panel" class="panel">
+          <div class="panel-title">Game Log</div>
+          <ul id="log-list" class="log-list"></ul>
+        </div>
+        <div id="buy-panel" class="panel">
+          <div class="panel-title">Buy Units</div>
+          <div class="panel-subtitle">Select a unit to place adjacent to your base</div>
+          <div id="buy-controls"></div>
+          <button id="buy-cancel" class="btn btn-secondary" style="display:none">Cancel Placement</button>
+        </div>
+      </aside>
+    </main>
+
+    <!-- Footer removed per request -->
+  </body>
+  </html>
