@@ -4,7 +4,7 @@
     name: "Whirlwind",
     desc: "Hit all adjacent enemies.",
     range: 1,
-    rangePattern: "orthogonal",
+    rangePattern: "square",
     damage: 3,
     requiresTarget: false,
     computeTargets(game, unit) { return game.getAdjacentEnemyTiles(unit); },

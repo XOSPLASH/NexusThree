@@ -5,7 +5,7 @@
     desc: "Dash 2 tiles and strike an adjacent enemy.",
     range: 2,
     rangePattern: "straight",
-    damage: 2,
+    damage: 4,
     requiresTarget: true,
     computeTargets(game, unit) { return game.getChargeTargets(unit); },
     perform(game, unit, r, c) {

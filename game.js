@@ -76,6 +76,25 @@ class Game {
       const c = Number(target.dataset.col);
       this.onCellClicked(r, c);
     });
+    gridEl.addEventListener("mousemove", (e) => {
+      const target = e.target.closest(".cell");
+      if (!target) return;
+      if (!(this.abilityMode && this.abilityMode.def && (this.abilityMode.def.rangePattern || "").toLowerCase() === "select")) return;
+      const r = Number(target.dataset.row);
+      const c = Number(target.dataset.col);
+      this.board.clearMarks();
+      const u = this.abilityMode.unit;
+      this.board.markSelected(u.row, u.col);
+      const area = [];
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const rr = r + dr, cc = c + dc;
+          if (!this.inBounds(rr, cc)) continue;
+          area.push([rr, cc]);
+        }
+      }
+      this.board.markPositions(area, "ability-hl");
+    });
     document.body.addEventListener("click", (e) => {
       if (!e.target.closest(".cell") &&
           !e.target.closest(".turnbar") &&
@@ -218,7 +237,7 @@ class Game {
           const liA = document.createElement("li"); liA.textContent = `Area: Adjacent enemies`;
           inner.appendChild(liA);
         }
-        const liR = document.createElement("li"); liR.textContent = `Range: ${rng}`;
+        const liR = document.createElement("li"); liR.textContent = (pattern.toLowerCase() === "select") ? `Range: Select` : `Range: ${rng}`;
         const liP = document.createElement("li"); liP.textContent = `Pattern: ${pattern}`;
         const liC = document.createElement("li"); liC.textContent = `Cooldown: ${cd}`;
         inner.appendChild(liR); inner.appendChild(liP); inner.appendChild(liC);
@@ -438,10 +457,12 @@ class Game {
     this.board.clearMarks();
     this.board.markSelected(unit.row, unit.col);
     const tiles = [];
-    const baseRange = typeof def.range === "number" && def.range > 0 ? def.range : unit.range;
-    const pattern = def.rangePattern || "radius";
-    const area = this.getPatternTiles(unit, baseRange, pattern);
-    for (const [r, c] of area) tiles.push([r, c]);
+    const pattern = (def.rangePattern || "radius").toLowerCase();
+    if (pattern !== "select") {
+      const baseRange = typeof def.range === "number" && def.range > 0 ? def.range : unit.range;
+      const area = this.getPatternTiles(unit, baseRange, pattern);
+      for (const [r, c] of area) tiles.push([r, c]);
+    }
     const targets = def && typeof def.computeTargets === "function" ? def.computeTargets(this, unit) : [];
     for (const [r, c] of targets) tiles.push([r, c]);
     const uniq = [];
