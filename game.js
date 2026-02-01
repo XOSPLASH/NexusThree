@@ -270,6 +270,26 @@ class Game {
         abilEl.appendChild(li);
       }
 
+      if (ent.kind === "unit") {
+        const statusPanel = document.createElement("div");
+        statusPanel.className = "ability-subpanel";
+        const statusTitle = document.createElement("div");
+        statusTitle.className = "unit-name";
+        statusTitle.textContent = "Status Effects";
+        const statusList = document.createElement("ul");
+        statusList.className = "list";
+        if ((ent.stunnedTurns || 0) > 0) {
+          const liS = document.createElement("li"); liS.textContent = `Stunned: ${ent.stunnedTurns} turn(s) remaining`;
+          statusList.appendChild(liS);
+        } else {
+          const liN = document.createElement("li"); liN.textContent = "None";
+          statusList.appendChild(liN);
+        }
+        statusPanel.appendChild(statusTitle);
+        statusPanel.appendChild(statusList);
+        abilEl.appendChild(statusPanel);
+      }
+
       // Rune Panel
       if (ent.kind === "unit") {
         const runePanel = document.createElement("div");
@@ -900,13 +920,13 @@ class Game {
     this.turn = Config.TEAM.AI;
     this.updateHUD();
     this.generateEnergy(Config.TEAM.AI);
-    for (const e of this.entities) if (e.team === Config.TEAM.AI && e.kind === "unit") e.ap = e.apMax;
+    this.resetAPForTeam(Config.TEAM.AI);
     this.tickCooldowns(Config.TEAM.AI);
     await this.runAI();
     this.checkWin();
     this.turn = Config.TEAM.PLAYER;
     this.generateEnergy(Config.TEAM.PLAYER);
-    for (const e of this.entities) if (e.team === Config.TEAM.PLAYER && e.kind === "unit") e.ap = e.apMax;
+    this.resetAPForTeam(Config.TEAM.PLAYER);
     this.tickCooldowns(Config.TEAM.PLAYER);
     this.abilityMode = null;
     this.updateHUD();
@@ -955,7 +975,8 @@ class Game {
               if (!target) return { r, c, score: 0 };
               let score = 0;
               if (target.kind === "unit") {
-                 if (target.ap > 0) score += 5; // Stun value
+                 if ((target.stunnedTurns || 0) > 0) score -= 4;
+                 if (target.ap > 0) score += 5;
                  score += (target.maxHp - target.hp); // Finish off weak
               }
               return { r, c, score };
@@ -1341,6 +1362,19 @@ class Game {
   }
 }
 
+Game.prototype.resetAPForTeam = function(team) {
+  for (const e of this.entities) {
+    if (e.kind === "unit" && e.team === team) {
+      const st = e.stunnedTurns || 0;
+      if (st > 0) {
+        e.ap = 0;
+        e.stunnedTurns = st - 1;
+      } else {
+        e.ap = e.apMax;
+      }
+    }
+  }
+};
 window.addEventListener("DOMContentLoaded", () => {
   const mountEl = document.getElementById("grid");
   const board = new Board(Config.ROWS, Config.COLS, mountEl);

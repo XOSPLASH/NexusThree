@@ -40,6 +40,7 @@ const makeUnit = (team, type, row, col) => ({
   runes: [],
   apMax: 2,
   ap: 2,
+  stunnedTurns: 0,
 });
 
 window.Entities = { unitDefs, makeBase, makeUnit };

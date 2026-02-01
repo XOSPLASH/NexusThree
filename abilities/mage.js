@@ -28,7 +28,8 @@
       if (target) {
         game.applyDamage(target, 2, unit);
         if (target.kind === "unit") {
-           target.ap = 0; // Stun effect
+           target.ap = 0;
+           target.stunnedTurns = Math.max((target.stunnedTurns || 0), 1);
            game.logEvent({ type: "status", msg: `${target.type} frozen by Frostbolt!` });
         }
         game.playSfx && game.playSfx("hit");
