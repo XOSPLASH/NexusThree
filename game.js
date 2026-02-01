@@ -14,10 +14,19 @@ class Game {
     this.energy = { [Config.TEAM.PLAYER]: Config.ENERGY_START_PLAYER, [Config.TEAM.AI]: Config.ENERGY_START_AI };
     this.energyGenerated = { [Config.TEAM.PLAYER]: Config.ENERGY_START_PLAYER, [Config.TEAM.AI]: Config.ENERGY_START_AI };
     this.energyGain = { [Config.TEAM.PLAYER]: Config.ENERGY_START_GAIN, [Config.TEAM.AI]: Config.ENERGY_START_GAIN };
+    this.purchasedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
     this.init();
   }
 
   init() {
+    // Rune definitions
+    window.RuneDefs = [
+      { id: "rune_hp", name: "Vitality Rune", desc: "+2 HP", cost: 2, apply: (u) => { u.maxHp += 2; u.hp += 2; } },
+      { id: "rune_dmg", name: "Power Rune", desc: "+1 Damage", cost: 3, apply: (u) => { u.dmg += 1; } },
+      { id: "rune_move", name: "Swiftness Rune", desc: "+1 Move", cost: 3, apply: (u) => { u.move += 1; } },
+      { id: "rune_range", name: "Scope Rune", desc: "+1 Range", cost: 4, apply: (u) => { u.range += 1; } },
+      { id: "rune_ap", name: "Frenzy Rune", desc: "+1 Max AP", cost: 5, apply: (u) => { u.apMax += 1; } }
+    ];
     const [pPos, aPos] = this.pickMirroredBasePositions();
     this.addEntity(Entities.makeBase(Config.TEAM.PLAYER, pPos[0], pPos[1]));
     this.addEntity(Entities.makeBase(Config.TEAM.AI, aPos[0], aPos[1]));
@@ -236,7 +245,7 @@ class Game {
         const inner = document.createElement("ul");
         inner.className = "list";
         const cd = (ent.abilityCooldowns && ent.abilityCooldowns[a.name]) || 0;
-        const rng = (typeof a.range === "number" && a.range > 0) ? a.range : ent.range;
+        const rng = (a.name === "Catalyze" || a.name === "Construct") ? 1 : ((typeof a.range === "number" && a.range > 0) ? a.range : ent.range);
         const pattern = (a.rangePattern || "radius");
         if (typeof a.damage === "number") {
           const liD = document.createElement("li"); liD.textContent = `Damage: ${a.damage}`;
@@ -251,7 +260,7 @@ class Game {
           inner.appendChild(liA);
         }
         const cap = pattern.charAt(0).toUpperCase() + pattern.slice(1);
-        const liR = document.createElement("li"); liR.textContent = (pattern.toLowerCase() === "select") ? `Range: Select` : `Range: ${rng}`;
+        const liR = document.createElement("li"); liR.textContent = `Range: ${rng}`;
         const liP = document.createElement("li"); liP.textContent = `Pattern: ${cap}`;
         const liC = document.createElement("li"); liC.textContent = `Cooldown: ${cd}`;
         inner.appendChild(liR); inner.appendChild(liP); inner.appendChild(liC);
@@ -260,6 +269,39 @@ class Game {
         li.appendChild(inner);
         abilEl.appendChild(li);
       }
+
+      // Rune Panel
+      if (ent.kind === "unit") {
+        const runePanel = document.createElement("div");
+        runePanel.className = "rune-panel";
+        const runeTitle = document.createElement("div");
+        runeTitle.className = "unit-name";
+        runeTitle.textContent = "Runes";
+        runePanel.appendChild(runeTitle);
+        
+        const slots = document.createElement("div");
+        slots.className = "rune-slots";
+        
+        for (let i = 0; i < 3; i++) {
+          const slot = document.createElement("div");
+          const rune = ent.runes[i];
+          if (rune) {
+            slot.className = "rune-slot filled";
+            slot.textContent = rune.name[0]; // First letter
+            slot.title = `${rune.name}: ${rune.desc}`;
+          } else {
+            slot.className = "rune-slot empty";
+            slot.textContent = "+";
+            if (ent.team === Config.TEAM.PLAYER) {
+              slot.onclick = () => this.openRuneShop(ent);
+            }
+          }
+          slots.appendChild(slot);
+        }
+        runePanel.appendChild(slots);
+        abilEl.appendChild(runePanel);
+      }
+
       if (ent.team === Config.TEAM.PLAYER) {
         const def = abilities[0];
         const cd = (ent.abilityCooldowns && ent.abilityCooldowns[def.name]) || 0;
@@ -300,6 +342,60 @@ class Game {
         }
       }
     }
+  }
+
+  openRuneShop(unit) {
+    let shop = document.getElementById("rune-shop");
+    if (!shop) {
+      shop = document.createElement("div");
+      shop.id = "rune-shop";
+      shop.className = "overlay";
+      document.body.appendChild(shop);
+    }
+    shop.innerHTML = "";
+    const panel = document.createElement("div");
+    panel.className = "panel shop-panel";
+    
+    const title = document.createElement("div");
+    title.className = "panel-title";
+    title.textContent = "Rune Shop";
+    panel.appendChild(title);
+
+    const list = document.createElement("div");
+    list.className = "rune-list";
+    
+    window.RuneDefs.forEach(def => {
+      const item = document.createElement("div");
+      item.className = "rune-item";
+      item.innerHTML = `
+        <div class="rune-info">
+          <div class="rune-name">${def.name}</div>
+          <div class="rune-desc">${def.desc}</div>
+        </div>
+        <button class="btn btn-sm">Buy (${def.cost} E)</button>
+      `;
+      const btn = item.querySelector("button");
+      if (this.energy[Config.TEAM.PLAYER] < def.cost) {
+        btn.disabled = true;
+        btn.textContent = `Cost ${def.cost} E`;
+      }
+      btn.onclick = () => {
+        this.buyRune(unit, def.id);
+        shop.classList.add("hidden");
+      };
+      list.appendChild(item);
+    });
+    
+    const close = document.createElement("button");
+    close.className = "btn btn-secondary";
+    close.textContent = "Cancel";
+    close.style.marginTop = "10px";
+    close.onclick = () => shop.classList.add("hidden");
+    
+    panel.appendChild(list);
+    panel.appendChild(close);
+    shop.appendChild(panel);
+    shop.classList.remove("hidden");
   }
 
   inBounds(r, c) { return r >= 0 && c >= 0 && r < Config.ROWS && c < Config.COLS; }
@@ -622,7 +718,7 @@ class Game {
             const maxSteps = Math.min((u && u.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
             const path = this.getMovePath(u, r, c, maxSteps);
             if (path && path.length) {
-              await this.animateMove(u, path, { dash: false, stepDelay: 140 });
+              await this.animateMove(u, path, { dash: false, stepDelay: 200 });
               u.ap -= 1;
               actionTaken = true;
             }
@@ -748,7 +844,7 @@ class Game {
   }
 
   async animateMove(unit, path, options) {
-    const delay = (options && options.stepDelay) || 140;
+    const delay = (options && options.stepDelay) || 200;
     for (const [r, c] of path) {
       this.moveUnit(unit, r, c, { dash: !!(options && options.dash) });
       this.renderEntities();
@@ -828,6 +924,19 @@ class Game {
           }
         }
       }
+      // AI Rune Purchasing
+      if (window.RuneDefs && this.energy[Config.TEAM.AI] >= 3) {
+        const aiUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.AI && e.runes.length < 3);
+        if (aiUnits.length > 0 && Math.random() < 0.4) {
+           const unit = aiUnits[Math.floor(Math.random() * aiUnits.length)];
+           const runes = window.RuneDefs;
+           const rune = runes[Math.floor(Math.random() * runes.length)];
+           if (this.energy[Config.TEAM.AI] >= rune.cost) {
+             this.buyRune(unit, rune.id);
+             this.logEvent({ type: "status", msg: `AI bought ${rune.name} for ${unit.type}` });
+           }
+        }
+      }
     }
     const playerBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.PLAYER);
     const aiUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.AI);
@@ -836,16 +945,48 @@ class Game {
     for (const u of aiUnits) {
       while (u.ap > 0) {
         const healTargets = this.getHealTargets(u);
-        if (u.type === "Mage" && healTargets.length > 0) {
+        if (u.type === "Mage" && ((u.abilityCooldowns["Heal"] || 0) === 0) && healTargets.length > 0) {
           const [r, c] = healTargets[0];
           const ally = this.occupants[r][c];
           this.heal(u, ally);
           u.ap -= 1;
+          u.abilityCooldowns["Heal"] = (u.abilityCooldowns["Heal"] || 0) + 2;
           this.logEvent({ type: "ability", caster: `AI Mage`, ability: "Heal", target: `AI ${ally.type}` });
           await this.delay(300);
           continue;
         }
         if (u.ap >= 1) {
+          if (u.type === "Alchemist" && ((u.abilityCooldowns["Catalyze"] || 0) === 0)) {
+            const def = (window.Abilities && window.Abilities.Alchemist && window.Abilities.Alchemist[0]);
+            if (def) {
+              const targets = def.computeTargets(this, u);
+              let bestTarget = null;
+              let maxHits = 0;
+              for (const [r, c] of targets) {
+                let hits = 0;
+                for (let dr = -1; dr <= 1; dr++) {
+                  for (let dc = -1; dc <= 1; dc++) {
+                    const rr = r + dr, cc = c + dc;
+                    if (!this.inBounds(rr, cc)) continue;
+                    const occ = this.occupants[rr][cc];
+                    if (occ && occ.team !== u.team) {
+                      hits++;
+                      if (occ.kind === "base") hits += 2;
+                    }
+                  }
+                }
+                if (hits > maxHits) {
+                  maxHits = hits;
+                  bestTarget = [r, c];
+                }
+              }
+              if (bestTarget && maxHits > 0) {
+                def.perform(this, u, bestTarget[0], bestTarget[1]);
+                await this.delay(320);
+                continue;
+              }
+            }
+          }
           if (u.type === "Berserker" && ((u.abilityCooldowns["Whirlwind"] || 0) === 0)) {
             const adj = this.getAdjacentEnemyTiles(u);
             if (adj.length) {
@@ -955,6 +1096,49 @@ class Game {
                 def.perform(this, u, pick.r, pick.c);
                 await this.delay(320);
                 continue;
+              }
+            }
+          }
+          if (u.type === "Cleric" && ((u.abilityCooldowns["Mass Heal"] || 0) === 0)) {
+            let allies = 0;
+            for (let dr = -1; dr <= 1; dr++) {
+              for (let dc = -1; dc <= 1; dc++) {
+                if (dr === 0 && dc === 0) continue;
+                const r = u.row + dr, c = u.col + dc;
+                if (!this.inBounds(r, c)) continue;
+                const occ = this.occupants[r][c];
+                if (occ && occ.kind === "unit" && occ.team === u.team && occ.hp < occ.maxHp) allies++;
+              }
+            }
+            if (allies > 0) {
+               const def = (window.Abilities && window.Abilities.Cleric && window.Abilities.Cleric[0]);
+               if (def) {
+                 def.perform(this, u);
+                 await this.delay(320);
+                 continue;
+               }
+            }
+          }
+          if (u.type === "Rogue" && ((u.abilityCooldowns["Shadowstep"] || 0) === 0)) {
+            const def = (window.Abilities && window.Abilities.Rogue && window.Abilities.Rogue[0]);
+            if (def) {
+              const targets = def.computeTargets(this, u);
+              const valid = targets.filter(([r, c]) => {
+                for (let dr = -1; dr <= 1; dr++) {
+                  for (let dc = -1; dc <= 1; dc++) {
+                    const nr = r + dr, nc = c + dc;
+                    if (!this.inBounds(nr, nc)) continue;
+                    const occ = this.occupants[nr][nc];
+                    if (occ && occ.team !== u.team) return true;
+                  }
+                }
+                return false;
+              });
+              if (valid.length > 0) {
+                 const pick = valid[Math.floor(Math.random() * valid.length)];
+                 def.perform(this, u, pick[0], pick[1]);
+                 await this.delay(320);
+                 continue;
               }
             }
           }
@@ -1253,6 +1437,7 @@ Game.prototype.spendEnergy = function(team, amount) {
 };
 
 Game.prototype.spawnUnitNearBase = function(team, type) {
+  if (this.purchasedUnits[team].has(type)) return false;
   if (this.entities.some(e => e.kind === "unit" && e.team === team && e.type === type)) return false;
   const base = this.entities.find(e => e.kind === "base" && e.team === team);
   if (!base) return false;
@@ -1271,8 +1456,23 @@ Game.prototype.spawnUnitNearBase = function(team, type) {
   const [r, c] = res[Math.floor(Math.random() * res.length)];
   const u = Entities.makeUnit(team, type, r, c);
   this.addEntity(u);
+  this.purchasedUnits[team].add(type);
   this.renderEntities();
   return true;
+};
+
+Game.prototype.buyRune = function(unit, runeId) {
+  const rune = window.RuneDefs.find(r => r.id === runeId);
+  if (!rune) return;
+  if (this.energy[unit.team] < rune.cost) return;
+  if (unit.runes.length >= 3) return;
+
+  this.spendEnergy(unit.team, rune.cost);
+  unit.runes.push(rune);
+  rune.apply(unit);
+  this.playSfx && this.playSfx("heal");
+  this.updateUnitPanel(unit);
+  this.updateHUD();
 };
 
 Game.prototype.getBuyPositions = function(team) {
@@ -1318,8 +1518,7 @@ Game.prototype.renderBuyControls = function() {
       list.style.display = list.style.display === "none" ? "block" : "none";
     });
     const remaining = groups[c].filter(t => {
-      const hasType = this.entities.some(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER && e.type === t);
-      return !hasType;
+      return !this.purchasedUnits[Config.TEAM.PLAYER].has(t);
     });
     remaining.forEach(t => {
       const def = Entities.unitDefs[t];
@@ -1384,11 +1583,11 @@ Game.prototype.chooseAIPurchaseType = function() {
   if (affordable.length === 0) return null;
   const aiUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.AI);
   const playerUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER);
-  const uniqueAffordable = affordable.filter(t => !aiUnits.some(u => u.type === t));
+  const uniqueAffordable = affordable.filter(t => !this.purchasedUnits[Config.TEAM.AI].has(t));
   const needHealer = aiUnits.some(u => u.hp < u.maxHp);
   if (needHealer && uniqueAffordable.includes("Mage")) return "Mage";
   const preferRanged = playerUnits.length === 0 || playerUnits.some(u => u.type === "Warrior");
-  const weights = { Warrior: 1, Archer: 2, Mage: 1, Paladin: 2, Berserker: 2, Builder: 2 };
+  const weights = { Warrior: 1, Archer: 2, Mage: 1, Paladin: 2, Berserker: 2, Builder: 2, Alchemist: 2, Rogue: 2, Cleric: 1 };
   if (preferRanged) { weights.Archer += 1; weights.Paladin += 1; }
   const list = uniqueAffordable.flatMap(t => Array(weights[t]).fill(t));
   return list[Math.floor(Math.random() * list.length)];

@@ -7,6 +7,8 @@ const unitDefs = {
   Berserker: { hp: 7, range: 2, dmg: 3, move: 3, cost: 3, symbol: "🪓", ability: "Whirlwind attack", rangePattern: "orthogonal", movePattern: "orthogonal" },
   Builder:   { hp: 5, range: 2, dmg: 2, move: 2, cost: 2, symbol: "🛠️", ability: "Construct or clear terrain", rangePattern: "orthogonal", movePattern: "orthogonal" },
   Alchemist: { hp: 6, range: 3, dmg: 3, move: 1, cost: 4, symbol: "⚗️", ability: "Catalyze a 3x3 area", rangePattern: "thrower", movePattern: "square" },
+  Rogue:     { hp: 5, range: 1, dmg: 4, move: 3, cost: 3, symbol: "🗡️", ability: "Shadowstep teleport", rangePattern: "orthogonal", movePattern: "orthogonal" },
+  Cleric:    { hp: 6, range: 2, dmg: 2, move: 2, cost: 4, symbol: "⚕️", ability: "Mass Heal adjacent allies", rangePattern: "square", movePattern: "orthogonal" },
 };
 
 const makeBase = (team, row, col) => ({
@@ -35,6 +37,7 @@ const makeUnit = (team, type, row, col) => ({
   rangePattern: unitDefs[type].rangePattern,
   movePattern: unitDefs[type].movePattern || "orthogonal",
   abilityCooldowns: {},
+  runes: [],
   apMax: 2,
   ap: 2,
 });
