@@ -945,15 +945,29 @@ class Game {
     for (const u of aiUnits) {
       while (u.ap > 0) {
         const healTargets = this.getHealTargets(u);
-        if (u.type === "Mage" && ((u.abilityCooldowns["Heal"] || 0) === 0) && healTargets.length > 0) {
-          const [r, c] = healTargets[0];
-          const ally = this.occupants[r][c];
-          this.heal(u, ally);
-          u.ap -= 1;
-          u.abilityCooldowns["Heal"] = (u.abilityCooldowns["Heal"] || 0) + 2;
-          this.logEvent({ type: "ability", caster: `AI Mage`, ability: "Heal", target: `AI ${ally.type}` });
-          await this.delay(300);
-          continue;
+        if (u.type === "Mage" && ((u.abilityCooldowns["Frostbolt"] || 0) === 0)) {
+          const def = (window.Abilities && window.Abilities.Mage && window.Abilities.Mage[0]);
+          if (def) {
+            const targets = def.computeTargets(this, u);
+            // Prioritize units with AP > 0 (to stun them) or low HP
+            const scored = targets.map(([r, c]) => {
+              const target = this.occupants[r][c];
+              if (!target) return { r, c, score: 0 };
+              let score = 0;
+              if (target.kind === "unit") {
+                 if (target.ap > 0) score += 5; // Stun value
+                 score += (target.maxHp - target.hp); // Finish off weak
+              }
+              return { r, c, score };
+            }).sort((a, b) => b.score - a.score);
+            
+            if (scored.length > 0) {
+              const best = scored[0];
+              def.perform(this, u, best.r, best.c);
+              await this.delay(320);
+              continue;
+            }
+          }
         }
         if (u.ap >= 1) {
           if (u.type === "Alchemist" && ((u.abilityCooldowns["Catalyze"] || 0) === 0)) {
@@ -1119,24 +1133,29 @@ class Game {
                }
             }
           }
-          if (u.type === "Rogue" && ((u.abilityCooldowns["Shadowstep"] || 0) === 0)) {
+          if (u.type === "Rogue" && ((u.abilityCooldowns["Shadow Strike"] || 0) === 0)) {
             const def = (window.Abilities && window.Abilities.Rogue && window.Abilities.Rogue[0]);
             if (def) {
               const targets = def.computeTargets(this, u);
-              const valid = targets.filter(([r, c]) => {
+              const scored = targets.map(([r, c]) => {
+                let bestEnemyScore = -1;
                 for (let dr = -1; dr <= 1; dr++) {
                   for (let dc = -1; dc <= 1; dc++) {
-                    const nr = r + dr, nc = c + dc;
-                    if (!this.inBounds(nr, nc)) continue;
-                    const occ = this.occupants[nr][nc];
-                    if (occ && occ.team !== u.team) return true;
+                     const nr = r + dr, nc = c + dc;
+                     if (!this.inBounds(nr, nc)) continue;
+                     const occ = this.occupants[nr][nc];
+                     if (occ && occ.team !== u.team) {
+                        let s = (occ.kind === "base" ? 50 : 0) + (occ.maxHp - occ.hp);
+                        if (s > bestEnemyScore) bestEnemyScore = s;
+                     }
                   }
                 }
-                return false;
-              });
-              if (valid.length > 0) {
-                 const pick = valid[Math.floor(Math.random() * valid.length)];
-                 def.perform(this, u, pick[0], pick[1]);
+                return { r, c, score: bestEnemyScore };
+              }).filter(t => t.score >= 0).sort((a, b) => b.score - a.score);
+
+              if (scored.length > 0) {
+                 const pick = scored[0];
+                 def.perform(this, u, pick.r, pick.c);
                  await this.delay(320);
                  continue;
               }
@@ -1433,8 +1452,10 @@ Game.prototype.spendEnergy = function(team, amount) {
   if (this.energy[team] < amount) return false;
   this.energy[team] -= amount;
   this.updateHUD();
-  return true;
-};
+  // Update Buy Controls to reflect purchase
+      this.renderBuyControls();
+      return true;
+    };
 
 Game.prototype.spawnUnitNearBase = function(team, type) {
   if (this.purchasedUnits[team].has(type)) return false;
@@ -1458,6 +1479,10 @@ Game.prototype.spawnUnitNearBase = function(team, type) {
   this.addEntity(u);
   this.purchasedUnits[team].add(type);
   this.renderEntities();
+  // If player, refresh buy controls to remove purchased unit
+  if (team === Config.TEAM.PLAYER) {
+    this.renderBuyControls();
+  }
   return true;
 };
 

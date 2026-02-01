@@ -257,18 +257,48 @@ body {
   }
 }
 
+@media (max-width: 960px) {
+  :root {
+    --side-width: 300px;
+    --grid-size: min(400px, 90vw);
+  }
+  .app-main {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    width: 100%;
+    max-width: 600px;
+    padding: 10px;
+  }
+  .side.left, .side.right {
+    width: 100%;
+    order: 2;
+  }
+  .center-wrap {
+    order: 1;
+    margin-bottom: 20px;
+  }
+  .side.left { order: 2; }
+  .side.right { order: 3; }
+  .grid {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1/1;
+  }
+  #unit-panel, #abilities-panel, #log-panel, #buy-panel {
+    height: auto;
+    max-height: 300px;
+  }
+  .panel { height: auto !important; }
+}
+
 @media (max-width: 560px) {
   .grid {
-    grid-template-columns: repeat(10, minmax(24px, 42px));
-    gap: 6px;
-    padding: 14px;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 4px;
+    padding: 8px;
   }
-}
-@media (max-width: 900px) {
-  :root { --side-width: 340px; }
-}
-@media (max-width: 740px) {
-  :root { --side-width: 280px; }
+  .cell { font-size: 16px; }
+  .token { font-size: 1.2em; }
 }
 @media (orientation: landscape) and (max-height: 460px) {
   :root {
