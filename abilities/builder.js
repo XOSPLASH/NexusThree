@@ -3,7 +3,7 @@
   const makeConstruct = () => ({
     name: "Construct",
     desc: "Build wall/bridge or clear wall (2x2 area)",
-    range: 4,
+    range: 3,
     rangePattern: "select",
     requiresTarget: true,
     computeTargets(game, unit) {
@@ -19,8 +19,8 @@
       return res;
     },
     perform(game, unit, r, c) {
-      for (let dr = 0; dr <= 1; dr++) {
-        for (let dc = 0; dc <= 1; dc++) {
+      for (let dr = -1; dr <= 0; dr++) {
+        for (let dc = -1; dc <= 0; dc++) {
           const rr = r + dr, cc = c + dc;
           if (!game.inBounds(rr, cc)) continue;
           const terr = game.terrain[rr][cc];

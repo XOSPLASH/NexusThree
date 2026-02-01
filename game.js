@@ -69,13 +69,16 @@ class Game {
 
   attachEvents() {
     const gridEl = this.board.mountEl;
-    gridEl.addEventListener("click", (e) => {
+    gridEl.addEventListener("click", async (e) => {
       const target = e.target.closest(".cell");
       if (!target) return;
       const r = Number(target.dataset.row);
       const c = Number(target.dataset.col);
-      this.onCellClicked(r, c);
+      await this.onCellClicked(r, c);
     });
+    document.body.addEventListener("click", (e) => {
+      if (e.target.closest(".btn")) this.playSfx && this.playSfx("click");
+    }, true);
     gridEl.addEventListener("mousemove", (e) => {
       const target = e.target.closest(".cell");
       if (!target) return;
@@ -124,7 +127,11 @@ class Game {
       const p = this.energy[Config.TEAM.PLAYER];
       const a = this.energy[Config.TEAM.AI];
       const max = Config.ENERGY_MAX_TOTAL;
-      turnEl.textContent = `Turn: ${this.turn === Config.TEAM.PLAYER ? "Player" : "AI"} • Energy P: ${p}/${max} • AI: ${a}/${max}`;
+      turnEl.textContent = `Turn: ${this.turn === Config.TEAM.PLAYER ? "Player" : "AI"}`;
+      const pEl = document.getElementById("energy-player");
+      const aEl = document.getElementById("energy-ai");
+      if (pEl) pEl.textContent = `Player: ${p}/${max}`;
+      if (aEl) aEl.textContent = `AI: ${a}/${max}`;
     }
   }
 
@@ -540,7 +547,7 @@ class Game {
     return res;
   }
 
-  onCellClicked(r, c) {
+  async onCellClicked(r, c) {
     const clickedEnt = this.occupants[r][c];
     const isPlayerTurn = this.turn === Config.TEAM.PLAYER;
     if (this.isGameOver()) return;
@@ -612,9 +619,13 @@ class Game {
           const key = JSON.stringify([r, c]);
           let actionTaken = false;
           if (moveTargets.includes(key) && this.occupants[r][c] == null) {
-            this.moveUnit(u, r, c);
-            u.ap -= 1;
-            actionTaken = true;
+            const maxSteps = Math.min((u && u.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+            const path = this.getMovePath(u, r, c, maxSteps);
+            if (path && path.length) {
+              await this.animateMove(u, path, { dash: false, stepDelay: 140 });
+              u.ap -= 1;
+              actionTaken = true;
+            }
           } else if (attackTargets.includes(key) && this.occupants[r][c]) {
             const target = this.occupants[r][c];
             const alsoTargets = this.getAttackTargets(u)
@@ -681,10 +692,70 @@ class Game {
     this.updateUnitPanel(null);
   }
 
-  moveUnit(unit, r, c) {
+  moveUnit(unit, r, c, opt) {
+    const src = this.board.getCell(unit.row, unit.col);
+    const dst = this.board.getCell(r, c);
     this.occupants[unit.row][unit.col] = null;
     unit.row = r; unit.col = c;
     this.occupants[r][c] = unit;
+    if (dst) {
+      dst.classList.add(opt && opt.dash ? "dash-anim" : "move-anim");
+      setTimeout(() => dst.classList.remove("dash-anim", "move-anim"), 360);
+    }
+    if (src) {
+      src.classList.add("move-anim");
+      setTimeout(() => src.classList.remove("move-anim"), 240);
+    }
+  }
+
+  getMovePath(unit, tr, tc, maxSteps) {
+    const start = [unit.row, unit.col];
+    const goalKey = `${tr},${tc}`;
+    const seen = new Set([`${start[0]},${start[1]}`]);
+    const queue = [[unit.row, unit.col, 0]];
+    const parent = {};
+    const pattern = (unit.movePattern || "orthogonal").toLowerCase();
+    const deltas = pattern === "square"
+      ? [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
+      : [[1,0],[-1,0],[0,1],[0,-1]];
+    while (queue.length) {
+      const [r, c, d] = queue.shift();
+      if (d >= maxSteps) continue;
+      for (const [dr, dc] of deltas) {
+        const nr = r + dr, nc = c + dc;
+        const key = `${nr},${nc}`;
+        if (!this.inBounds(nr, nc)) continue;
+        if (seen.has(key)) continue;
+        const terr = this.terrain[nr][nc];
+        if (terr === "wall" || terr === "water" || terr === "fortwall") continue;
+        if (this.occupants[nr][nc] != null && !(nr === tr && nc === tc)) continue;
+        seen.add(key);
+        parent[key] = `${r},${c}`;
+        if (key === goalKey) {
+          const path = [];
+          let cur = key;
+          while (cur && cur !== `${start[0]},${start[1]}`) {
+            const [pr, pc] = cur.split(",").map(Number);
+            path.unshift([pr, pc]);
+            cur = parent[cur];
+          }
+          return path;
+        }
+        queue.push([nr, nc, d + 1]);
+      }
+    }
+    return null;
+  }
+
+  async animateMove(unit, path, options) {
+    const delay = (options && options.stepDelay) || 140;
+    for (const [r, c] of path) {
+      this.moveUnit(unit, r, c, { dash: !!(options && options.dash) });
+      this.renderEntities();
+      this.board.clearMarks();
+      await this.delay(delay);
+    }
+    this.playSfx && this.playSfx(options && options.dash ? "dash" : "move");
   }
 
   applyDamage(target, dmg, source) {
@@ -722,7 +793,7 @@ class Game {
     this.playSfx && this.playSfx("heal");
   }
 
-  endPlayerTurn() {
+  async endPlayerTurn() {
     if (this.turn !== Config.TEAM.PLAYER) return;
     this.selected = null;
     this.abilityMode = null;
@@ -735,7 +806,7 @@ class Game {
     this.generateEnergy(Config.TEAM.AI);
     for (const e of this.entities) if (e.team === Config.TEAM.AI && e.kind === "unit") e.ap = e.apMax;
     this.tickCooldowns(Config.TEAM.AI);
-    this.runAI();
+    await this.runAI();
     this.checkWin();
     this.turn = Config.TEAM.PLAYER;
     this.generateEnergy(Config.TEAM.PLAYER);
@@ -745,7 +816,7 @@ class Game {
     this.updateHUD();
   }
 
-  runAI() {
+  async runAI() {
     const aiBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.AI);
     if (aiBase && window.Entities && window.Entities.unitDefs) {
       const t = this.chooseAIPurchaseType();
@@ -771,6 +842,7 @@ class Game {
           this.heal(u, ally);
           u.ap -= 1;
           this.logEvent({ type: "ability", caster: `AI Mage`, ability: "Heal", target: `AI ${ally.type}` });
+          await this.delay(300);
           continue;
         }
         if (u.ap >= 1) {
@@ -784,6 +856,7 @@ class Game {
               u.ap -= 1;
               u.abilityCooldowns["Whirlwind"] = (u.abilityCooldowns["Whirlwind"] || 0) + 2;
               this.logEvent({ type: "ability", caster: `AI Berserker`, ability: "Whirlwind" });
+              await this.delay(320);
               continue;
             }
           }
@@ -802,6 +875,7 @@ class Game {
               u.ap -= 1;
               u.abilityCooldowns["Smite"] = (u.abilityCooldowns["Smite"] || 0) + 2;
               this.logEvent({ type: "ability", caster: `AI Paladin`, ability: "Smite", target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
+              await this.delay(320);
               continue;
             }
           }
@@ -820,6 +894,7 @@ class Game {
               u.ap -= 1;
               u.abilityCooldowns["Snipe"] = (u.abilityCooldowns["Snipe"] || 0) + 2;
               this.logEvent({ type: "ability", caster: `AI Archer`, ability: "Snipe", target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
+              await this.delay(300);
               continue;
             }
           }
@@ -830,10 +905,24 @@ class Game {
                 .map(([r, c]) => ({ r, c, d: Math.abs(focus.row - r) + Math.abs(focus.col - c) }))
                 .sort((a, b) => a.d - b.d)[0];
               if (best) {
-                this.moveUnit(u, best.r, best.c);
+                const path = [];
+                const dr = Math.sign(best.r - u.row), dc = Math.sign(best.c - u.col);
+                let cr = u.row, cc = u.col;
+                for (let step = 0; step < 2; step++) {
+                  cr += dr; cc += dc;
+                  if (!this.inBounds(cr, cc)) break;
+                  if (this.terrain[cr][cc] || this.occupants[cr][cc] != null) break;
+                  path.push([cr, cc]);
+                }
+                if (path.length) {
+                  await this.animateMove(u, path, { dash: true, stepDelay: 120 });
+                } else {
+                  this.moveUnit(u, best.r, best.c, { dash: true });
+                }
                 u.ap -= 1;
                 u.abilityCooldowns["Charge"] = (u.abilityCooldowns["Charge"] || 0) + 2;
                 this.logEvent({ type: "ability", caster: `AI Warrior`, ability: "Charge" });
+                await this.delay(320);
                 continue;
               }
             }
@@ -864,6 +953,7 @@ class Game {
               const pick = candidates[0];
               if (pick) {
                 def.perform(this, u, pick.r, pick.c);
+                await this.delay(320);
                 continue;
               }
             }
@@ -887,21 +977,40 @@ class Game {
           this.attack(u, target);
           u.ap -= 1;
           this.logEvent({ type: "attack", attacker: `AI ${u.type}`, target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}`, dmg: u.dmg, alsoTargets });
+          await this.delay(280);
           continue;
         }
         const nearestPlayer = playerUnits.slice().sort((a, b) => (Math.abs(a.row - u.row) + Math.abs(a.col - u.col)) - (Math.abs(b.row - u.row) + Math.abs(b.col - u.col)))[0];
         if (u.hp <= 1 && nearestPlayer) {
           const step = this.stepAway(u.row, u.col, nearestPlayer.row, nearestPlayer.col, u);
           if (step) {
-            const [nr, nc] = step; if (this.occupants[nr][nc] == null) this.moveUnit(u, nr, nc);
+            const [nr, nc] = step;
+            if (this.occupants[nr][nc] == null) {
+              const path = this.getMovePath(u, nr, nc, (u.move || 1));
+              if (path && path.length) {
+                await this.animateMove(u, path, { dash: false, stepDelay: 140 });
+              } else {
+                this.moveUnit(u, nr, nc);
+              }
+            }
             u.ap -= 1;
+            await this.delay(260);
             continue;
           }
         }
         const step = this.stepTowardSmart(u.row, u.col, focus.row, focus.col, u);
         if (step) {
-          const [nr, nc] = step; if (this.occupants[nr][nc] == null) this.moveUnit(u, nr, nc);
+          const [nr, nc] = step;
+          if (this.occupants[nr][nc] == null) {
+            const path = this.getMovePath(u, nr, nc, (u.move || 1));
+            if (path && path.length) {
+              await this.animateMove(u, path, { dash: false, stepDelay: 140 });
+            } else {
+              this.moveUnit(u, nr, nc);
+            }
+          }
           u.ap -= 1;
+          await this.delay(260);
           continue;
         }
         break;
@@ -1014,6 +1123,10 @@ class Game {
     }
   }
 
+  delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
   tickCooldowns(team) {
     for (const e of this.entities) {
       if (e.kind === "unit" && e.team === team && e.abilityCooldowns) {
@@ -1053,7 +1166,13 @@ Game.prototype.playSfx = function(kind) {
   const o = ctx.createOscillator();
   const g = ctx.createGain();
   o.type = "sine";
-  o.frequency.value = kind === "hit" ? 320 : (kind === "heal" ? 520 : 420);
+  o.frequency.value =
+    kind === "hit" ? 320 :
+    kind === "heal" ? 520 :
+    kind === "ability" ? 420 :
+    kind === "click" ? 650 :
+    kind === "move" ? 440 :
+    kind === "dash" ? 600 : 420;
   g.gain.value = 0.03;
   o.connect(g).connect(ctx.destination);
   o.start();
