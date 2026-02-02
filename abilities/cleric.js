@@ -5,7 +5,7 @@
     desc: "Heal all adjacent allies for 2 HP.",
     range: 1,
     rangePattern: "square",
-    damage: 0,
+    heal: 2,
     requiresTarget: false,
     computeTargets(game, unit) { return []; }, // No target selection needed
     perform(game, unit) {

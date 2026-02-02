@@ -3,9 +3,9 @@
   const makeWhirlwind = () => ({
     name: "Whirlwind",
     desc: "Hit all adjacent enemies.",
-    range: 1,
+    range: 2,
     rangePattern: "square",
-    damage: 3,
+    damage: 4,
     requiresTarget: false,
     computeTargets(game, unit) { return game.getAdjacentEnemyTiles(unit); },
     perform(game, unit) {

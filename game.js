@@ -9,6 +9,7 @@ class Game {
     this.overlay = null;
     this.occupants = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
     this.terrain = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
+    this.hazards = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
     this.entities = [];
     this.log = [];
     this.energy = { [Config.TEAM.PLAYER]: Config.ENERGY_START_PLAYER, [Config.TEAM.AI]: Config.ENERGY_START_AI };
@@ -62,6 +63,19 @@ class Game {
         const span = document.createElement("span");
         span.className = "token";
         span.textContent = t === "wall" ? "🧱" : (t === "water" ? "🌊" : (t === "fortwall" ? "🗿" : "🌉"));
+        cell.appendChild(span);
+      }
+    }
+    // Hazards overlay (e.g., fire)
+    for (let r = 0; r < Config.ROWS; r++) {
+      for (let c = 0; c < Config.COLS; c++) {
+        const h = this.hazards[r][c];
+        if (!h) continue;
+        const cell = this.board.getCell(r, c);
+        if (!cell) continue;
+        const span = document.createElement("span");
+        span.className = "token";
+        span.textContent = h.kind === "fire" ? "🔥" : "☠️";
         cell.appendChild(span);
       }
     }
@@ -135,12 +149,11 @@ class Game {
     if (turnEl) {
       const p = this.energy[Config.TEAM.PLAYER];
       const a = this.energy[Config.TEAM.AI];
-      const max = Config.ENERGY_MAX_TOTAL;
       turnEl.textContent = `Turn: ${this.turn === Config.TEAM.PLAYER ? "Player" : "AI"}`;
       const pEl = document.getElementById("energy-player");
       const aEl = document.getElementById("energy-ai");
-      if (pEl) pEl.textContent = `Player: ${p}/${max}`;
-      if (aEl) aEl.textContent = `AI: ${a}/${max}`;
+      if (pEl) pEl.textContent = `Player: ${p}`;
+      if (aEl) aEl.textContent = `AI: ${a}`;
     }
   }
 
@@ -179,8 +192,11 @@ class Game {
           : ent.terrain === "fortwall" ? "Fortified Wall"
           : ent.terrain === "bridge" ? "Bridge"
           : "Plain";
+        const hz = this.hazards[ent.row][ent.col];
+        const hazardName = hz && hz.kind === "fire" ? `Fire (${hz.turns} turn(s))` : "None";
         const stats = [
           ["Terrain", terrName],
+          ["Hazard", hazardName],
         ];
       for (const [k, v] of stats) {
         const li = document.createElement("li"); li.textContent = `${k}: ${v}`; statsEl.appendChild(li);
@@ -247,11 +263,11 @@ class Game {
         const cd = (ent.abilityCooldowns && ent.abilityCooldowns[a.name]) || 0;
         const rng = (a.name === "Catalyze" || a.name === "Construct") ? 1 : ((typeof a.range === "number" && a.range > 0) ? a.range : ent.range);
         const pattern = (a.rangePattern || "radius");
-        if (typeof a.damage === "number") {
+        if (typeof a.damage === "number" && a.damage > 0) {
           const liD = document.createElement("li"); liD.textContent = `Damage: ${a.damage}`;
           inner.appendChild(liD);
         }
-        if (typeof a.heal === "number") {
+        if (typeof a.heal === "number" && a.heal > 0) {
           const liH = document.createElement("li"); liH.textContent = `Heal: ${a.heal}`;
           inner.appendChild(liH);
         }
@@ -260,8 +276,8 @@ class Game {
           inner.appendChild(liA);
         }
         const cap = pattern.charAt(0).toUpperCase() + pattern.slice(1);
-        const liR = document.createElement("li"); liR.textContent = `Range: ${rng}`;
-        const liP = document.createElement("li"); liP.textContent = `Pattern: ${cap}`;
+        const liR = document.createElement("li"); liR.textContent = `Ability Range: ${rng}`;
+        const liP = document.createElement("li"); liP.textContent = `Ability Range Pattern: ${cap}`;
         if (a.name === "Construct") {
           const liA = document.createElement("li"); liA.textContent = `Area: 2x2`;
           inner.appendChild(liA);
@@ -286,10 +302,16 @@ class Game {
         statusTitle.textContent = "Status Effects";
         const statusList = document.createElement("ul");
         statusList.className = "list";
+        let any = false;
         if ((ent.stunnedTurns || 0) > 0) {
           const liS = document.createElement("li"); liS.textContent = `Stunned: ${ent.stunnedTurns} turn(s) remaining`;
-          statusList.appendChild(liS);
-        } else {
+          statusList.appendChild(liS); any = true;
+        }
+        if ((ent.burnTurns || 0) > 0) {
+          const liB = document.createElement("li"); liB.textContent = `Burn: ${ent.burnTurns} turn(s) remaining`;
+          statusList.appendChild(liB); any = true;
+        }
+        if (!any) {
           const liN = document.createElement("li"); liN.textContent = "None";
           statusList.appendChild(liN);
         }
@@ -405,11 +427,12 @@ class Game {
         </div>
         <button class="btn btn-sm">Buy (${def.cost} E)</button>
       `;
-      const btn = item.querySelector("button");
-      if (this.energy[Config.TEAM.PLAYER] < def.cost) {
-        btn.disabled = true;
-        btn.textContent = `Cost ${def.cost} E`;
-      }
+    const btn = item.querySelector("button");
+    const hasRune = unit.runes.some(r => r.id === def.id);
+    if (this.energy[Config.TEAM.PLAYER] < def.cost || hasRune || unit.runes.length >= 3) {
+      btn.disabled = true;
+      btn.textContent = hasRune ? "Owned" : `Cost ${def.cost} E`;
+    }
       btn.onclick = () => {
         this.buyRune(unit, def.id);
         shop.classList.add("hidden");
@@ -582,19 +605,7 @@ class Game {
   }
 
   getHealTargets(unit) {
-    if (unit.ap < 1) return [];
-    if (unit.type !== "Mage") return [];
-    const res = [];
-    const deltas = [ [1,0], [-1,0], [0,1], [0,-1] ];
-    for (const [dr, dc] of deltas) {
-      const r = unit.row + dr, c = unit.col + dc;
-      if (!this.inBounds(r, c)) continue;
-      const occ = this.occupants[r][c];
-      if (occ && occ.kind === "unit" && occ.team === unit.team && occ.hp < occ.maxHp) {
-        res.push([r, c]);
-      }
-    }
-    return res;
+    return [];
   }
 
   showAbilityHints(unit, def) {
@@ -742,7 +753,6 @@ class Game {
         if (u.ap >= 1) {
           const moveTargets = this.getMoveTargets(u).map(JSON.stringify);
           const attackTargets = this.getAttackTargets(u).map(JSON.stringify);
-          const healTargets = this.getHealTargets(u).map(JSON.stringify);
           const key = JSON.stringify([r, c]);
           let actionTaken = false;
           if (moveTargets.includes(key) && this.occupants[r][c] == null) {
@@ -764,13 +774,6 @@ class Game {
             this.logEvent({ type: "attack", attacker: `${u.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${u.type}`,
               target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}`,
               dmg: u.dmg, alsoTargets });
-            u.ap -= 1;
-            actionTaken = true;
-          } else if (healTargets.includes(key) && this.occupants[r][c]) {
-            const ally = this.occupants[r][c];
-            this.heal(u, ally);
-            this.logEvent({ type: "ability", caster: `${u.team === Config.TEAM.PLAYER ? "Player" : "AI"} Mage`, ability: "Heal",
-              target: `${ally.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${ally.type}` });
             u.ap -= 1;
             actionTaken = true;
           }
@@ -825,6 +828,10 @@ class Game {
     this.occupants[unit.row][unit.col] = null;
     unit.row = r; unit.col = c;
     this.occupants[r][c] = unit;
+    const hz = this.hazards[r][c];
+    if (hz && hz.kind === "fire" && this.terrain[r][c] !== "water") {
+      unit.burnTurns = Math.max((unit.burnTurns || 0), 1);
+    }
     if (dst) {
       dst.classList.add(opt && opt.dash ? "dash-anim" : "move-anim");
       setTimeout(() => dst.classList.remove("dash-anim", "move-anim"), 360);
@@ -899,6 +906,8 @@ class Game {
         const killer = source ? `${source.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${source.type}` : "Unknown";
         const victim = `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.type}`;
         this.logEvent({ type: "death", killer, victim });
+        this.teamDeaths = this.teamDeaths || { [Config.TEAM.PLAYER]: 0, [Config.TEAM.AI]: 0 };
+        this.teamDeaths[target.team] = (this.teamDeaths[target.team] || 0) + 1;
         this.entities = this.entities.filter(e => e !== target);
         this.occupants[target.row][target.col] = null;
       }
@@ -906,7 +915,13 @@ class Game {
   }
 
   attack(attacker, target) {
-    this.applyDamage(target, attacker.dmg, attacker);
+    let dmg = attacker.dmg;
+    if (attacker.type === "Avenger") {
+      this.teamDeaths = this.teamDeaths || { [Config.TEAM.PLAYER]: 0, [Config.TEAM.AI]: 0 };
+      const bonus = Math.min(5, this.teamDeaths[attacker.team] || 0);
+      dmg += bonus;
+    }
+    this.applyDamage(target, dmg, attacker);
   }
 
   heal(mage, ally) {
@@ -932,12 +947,14 @@ class Game {
     this.updateHUD();
     this.generateEnergy(Config.TEAM.AI);
     this.resetAPForTeam(Config.TEAM.AI);
+    this.applyHazardsForTeam(Config.TEAM.AI);
     this.tickCooldowns(Config.TEAM.AI);
     await this.runAI();
     this.checkWin();
     this.turn = Config.TEAM.PLAYER;
     this.generateEnergy(Config.TEAM.PLAYER);
     this.resetAPForTeam(Config.TEAM.PLAYER);
+    this.applyHazardsForTeam(Config.TEAM.PLAYER);
     this.tickCooldowns(Config.TEAM.PLAYER);
     this.abilityMode = null;
     this.updateHUD();
@@ -1029,6 +1046,56 @@ class Game {
               if (bestTarget && maxHits > 0) {
                 def.perform(this, u, bestTarget[0], bestTarget[1]);
                 await this.delay(320);
+                continue;
+              }
+            }
+          }
+          if (u.type === "Firecaller" && ((u.abilityCooldowns["Ignite"] || 0) === 0)) {
+            const def = (window.Abilities && window.Abilities.Firecaller && window.Abilities.Firecaller[0]);
+            if (def) {
+              const targets = def.computeTargets(this, u);
+              let bestTarget = null;
+              let maxEnemies = 0;
+              for (const [r, c] of targets) {
+                let enemies = 0;
+                for (let dr = -1; dr <= 1; dr++) {
+                  for (let dc = -1; dc <= 1; dc++) {
+                    const rr = r + dr, cc = c + dc;
+                    if (!this.inBounds(rr, cc)) continue;
+                    const occ = this.occupants[rr][cc];
+                    if (occ && occ.kind === "unit" && occ.team !== u.team) enemies++;
+                  }
+                }
+                if (enemies > maxEnemies) { maxEnemies = enemies; bestTarget = [r, c]; }
+              }
+              if (bestTarget && maxEnemies > 0) {
+                def.perform(this, u, bestTarget[0], bestTarget[1]);
+                await this.delay(360);
+                continue;
+              }
+            }
+          }
+          if (u.type === "Magnet" && ((u.abilityCooldowns["Pull"] || 0) === 0)) {
+            const def = (window.Abilities && window.Abilities.Magnet && window.Abilities.Magnet[0]);
+            if (def) {
+              const targets = def.computeTargets(this, u);
+              let bestTarget = null;
+              let cluster = 0;
+              for (const [r, c] of targets) {
+                let count = 0;
+                for (let dr = -1; dr <= 1; dr++) {
+                  for (let dc = -1; dc <= 1; dc++) {
+                    const rr = r + dr, cc = c + dc;
+                    if (!this.inBounds(rr, cc)) continue;
+                    const occ = this.occupants[rr][cc];
+                    if (occ && occ.kind === "unit") count++;
+                  }
+                }
+                if (count > cluster) { cluster = count; bestTarget = [r, c]; }
+              }
+              if (bestTarget && cluster >= 2) {
+                def.perform(this, u, bestTarget[0], bestTarget[1]);
+                await this.delay(360);
                 continue;
               }
             }
@@ -1386,6 +1453,30 @@ Game.prototype.resetAPForTeam = function(team) {
     }
   }
 };
+
+Game.prototype.applyHazardsForTeam = function(team) {
+  for (const e of this.entities) {
+    if (e.kind === "unit" && e.team === team) {
+      const h = this.hazards[e.row][e.col];
+      if (h && h.kind === "fire" && this.terrain[e.row][e.col] !== "water") {
+        this.applyDamage(e, 2, null);
+      }
+      if ((e.burnTurns || 0) > 0) {
+        this.applyDamage(e, 1, null);
+        e.burnTurns = Math.max(0, (e.burnTurns || 0) - 1);
+      }
+    }
+  }
+  for (let r = 0; r < Config.ROWS; r++) {
+    for (let c = 0; c < Config.COLS; c++) {
+      const h = this.hazards[r][c];
+      if (!h) continue;
+      h.turns -= 1;
+      if (h.turns <= 0) this.hazards[r][c] = null;
+    }
+  }
+  this.renderEntities();
+};
 window.addEventListener("DOMContentLoaded", () => {
   const mountEl = document.getElementById("grid");
   const board = new Board(Config.ROWS, Config.COLS, mountEl);
@@ -1536,6 +1627,7 @@ Game.prototype.buyRune = function(unit, runeId) {
   if (!rune) return;
   if (this.energy[unit.team] < rune.cost) return;
   if (unit.runes.length >= 3) return;
+  if (unit.runes.some(r => r.id === runeId)) return;
 
   this.spendEnergy(unit.team, rune.cost);
   unit.runes.push(rune);
