@@ -44,6 +44,7 @@ class Game {
     this.board.forEachCell(cell => {
       cell.innerHTML = "";
       cell.style.borderColor = "";
+      cell.classList.remove("terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","hazard-fire");
     });
     // Terrain tokens
     for (let r = 0; r < Config.ROWS; r++) {
@@ -52,10 +53,16 @@ class Game {
         if (!t) continue;
         const cell = this.board.getCell(r, c);
         if (!cell) continue;
-        const span = document.createElement("span");
-        span.className = "token";
-        span.textContent = t === "wall" ? "🧱" : (t === "water" ? "🌊" : (t === "fortwall" ? "🗿" : "🌉"));
-        cell.appendChild(span);
+        if (t === "water") cell.classList.add("terrain-water");
+        else if (t === "wall") cell.classList.add("terrain-wall");
+        else if (t === "fortwall") cell.classList.add("terrain-fortwall");
+        else if (t === "bridge") cell.classList.add("terrain-bridge");
+        if (t === "wall" || t === "bridge") {
+          const terrainIcon = document.createElement("span");
+          terrainIcon.className = "terrain-icon";
+          terrainIcon.textContent = t === "wall" ? "🧱" : "🌉";
+          cell.appendChild(terrainIcon);
+        }
       }
     }
     // Hazards overlay (e.g., fire)
@@ -65,10 +72,7 @@ class Game {
         if (!h) continue;
         const cell = this.board.getCell(r, c);
         if (!cell) continue;
-        const span = document.createElement("span");
-        span.className = "token";
-        span.textContent = h.kind === "fire" ? "🔥" : "☠️";
-        cell.appendChild(span);
+        if (h.kind === "fire") cell.classList.add("hazard-fire");
       }
     }
     // Units and bases
@@ -155,19 +159,33 @@ class Game {
     const descEl = document.getElementById("unit-desc");
     const statsEl = document.getElementById("stats-list");
     const abilEl = document.getElementById("abilities-list");
+    const unitPanel = document.getElementById("unit-panel");
     let abilBtn = document.getElementById("ability-btn");
     if (!abilBtn) {
       abilBtn = document.createElement("button");
       abilBtn.id = "ability-btn";
       abilBtn.className = "btn btn-primary";
       abilBtn.style.marginTop = "6px";
-      const panel = document.getElementById("abilities-panel");
-      if (panel) panel.appendChild(abilBtn);
+      if (unitPanel) unitPanel.appendChild(abilBtn);
+    }
+    let openAbilBtn = document.getElementById("abilities-open-btn");
+    if (!openAbilBtn) {
+      openAbilBtn = document.createElement("button");
+      openAbilBtn.id = "abilities-open-btn";
+      openAbilBtn.className = "btn btn-secondary";
+      openAbilBtn.style.marginTop = "6px";
+      openAbilBtn.textContent = "View Abilities";
+      if (unitPanel) unitPanel.appendChild(openAbilBtn);
     }
     if (!iconEl || !nameEl || !descEl || !statsEl || !abilEl) return;
     statsEl.innerHTML = "";
     abilEl.innerHTML = "";
     abilBtn.style.display = "none";
+    if (openAbilBtn) openAbilBtn.style.display = "none";
+    if (unitPanel) {
+      const existingRunes = unitPanel.querySelectorAll(".rune-panel");
+      existingRunes.forEach(el => el.remove());
+    }
 
     if (!ent) {
       iconEl.textContent = "—";
@@ -214,6 +232,41 @@ class Game {
     iconEl.textContent = ent.symbol;
     nameEl.textContent = `${ent.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${ent.type}`;
     descEl.textContent = def.ability;
+    if (ent.kind === "unit") {
+      const runePanel = document.createElement("div");
+      runePanel.className = "rune-panel";
+      const runeTitle = document.createElement("div");
+      runeTitle.className = "unit-name";
+      runeTitle.textContent = "Runes";
+      runePanel.appendChild(runeTitle);
+      const slots = document.createElement("div");
+      slots.className = "rune-slots";
+      for (let i = 0; i < 3; i++) {
+        const slot = document.createElement("div");
+        const rune = ent.runes[i];
+        if (rune) {
+          slot.className = "rune-slot filled";
+          slot.textContent = rune.name[0];
+          slot.title = `${rune.name}: ${rune.desc}`;
+        } else {
+          if (ent.team === Config.TEAM.PLAYER) {
+            slot.className = "rune-slot empty";
+            slot.textContent = "+";
+            slot.onclick = () => this.openRuneShop(ent);
+          } else {
+            slot.className = "rune-slot locked";
+            slot.textContent = "";
+          }
+        }
+        slots.appendChild(slot);
+      }
+      runePanel.appendChild(slots);
+      if (unitPanel) {
+        const subTitle = unitPanel.querySelector(".panel-subtitle");
+        if (subTitle) unitPanel.insertBefore(runePanel, subTitle);
+        else unitPanel.appendChild(runePanel);
+      }
+    }
     const stats = [
       ["HP", `${ent.hp}/${ent.maxHp}`],
       ["Damage", `${ent.dmg}`],
@@ -313,46 +366,43 @@ class Game {
         abilEl.appendChild(statusPanel);
       }
 
-      // Rune Panel
-      if (ent.kind === "unit") {
-        const runePanel = document.createElement("div");
-        runePanel.className = "rune-panel";
-        const runeTitle = document.createElement("div");
-        runeTitle.className = "unit-name";
-        runeTitle.textContent = "Runes";
-        runePanel.appendChild(runeTitle);
-        
-        const slots = document.createElement("div");
-        slots.className = "rune-slots";
-        
-        for (let i = 0; i < 3; i++) {
-          const slot = document.createElement("div");
-          const rune = ent.runes[i];
-          if (rune) {
-            slot.className = "rune-slot filled";
-            slot.textContent = rune.name[0]; // First letter
-            slot.title = `${rune.name}: ${rune.desc}`;
-          } else {
-            if (ent.team === Config.TEAM.PLAYER) {
-              slot.className = "rune-slot empty";
-              slot.textContent = "+";
-              slot.onclick = () => this.openRuneShop(ent);
-            } else {
-              slot.className = "rune-slot locked";
-              slot.textContent = "";
-            }
-          }
-          slots.appendChild(slot);
-        }
-        runePanel.appendChild(slots);
-        abilEl.appendChild(runePanel);
-      }
+      
 
       if (ent.team === Config.TEAM.PLAYER) {
         const def = abilities[0];
         const cd = (ent.abilityCooldowns && ent.abilityCooldowns[def.name]) || 0;
         const isAiming = !!(this.abilityMode && this.abilityMode.unit === ent && this.abilityMode.def && this.abilityMode.def.name === def.name);
         abilBtn.style.display = "inline-block";
+        if (openAbilBtn) {
+          openAbilBtn.style.display = "inline-block";
+          openAbilBtn.onclick = () => {
+            let overlay = document.getElementById("abilities-overlay");
+            if (!overlay) {
+              overlay = document.createElement("div");
+              overlay.id = "abilities-overlay";
+              overlay.className = "overlay";
+              document.body.appendChild(overlay);
+            }
+            overlay.innerHTML = "";
+            const panel = document.createElement("div");
+            panel.className = "panel";
+            const title = document.createElement("div");
+            title.className = "panel-title";
+            title.textContent = "Abilities";
+            const list = document.createElement("ul");
+            list.className = "list";
+            list.innerHTML = document.getElementById("abilities-list").innerHTML;
+            const closeBtn = document.createElement("button");
+            closeBtn.className = "btn btn-secondary";
+            closeBtn.textContent = "Close";
+            closeBtn.onclick = () => { overlay.classList.add("hidden"); };
+            panel.appendChild(title);
+            panel.appendChild(list);
+            panel.appendChild(closeBtn);
+            overlay.appendChild(panel);
+            overlay.classList.remove("hidden");
+          };
+        }
         if (isAiming) {
           abilBtn.textContent = "Cancel Ability";
           abilBtn.className = "btn btn-danger";
@@ -752,7 +802,7 @@ class Game {
             const maxSteps = Math.min((u && u.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
             const path = this.getMovePath(u, r, c, maxSteps);
             if (path && path.length) {
-              await this.animateMove(u, path, { dash: false, stepDelay: 200 });
+              await this.animateMove(u, path, { dash: false, stepDelay: 360 });
               u.ap -= 1;
               actionTaken = true;
             }
@@ -827,11 +877,11 @@ class Game {
     }
     if (dst) {
       dst.classList.add(opt && opt.dash ? "dash-anim" : "move-anim");
-      setTimeout(() => dst.classList.remove("dash-anim", "move-anim"), 360);
+      setTimeout(() => dst.classList.remove("dash-anim", "move-anim"), 520);
     }
     if (src) {
       src.classList.add("move-anim");
-      setTimeout(() => src.classList.remove("move-anim"), 240);
+      setTimeout(() => src.classList.remove("move-anim"), 420);
     }
   }
 
@@ -842,7 +892,7 @@ class Game {
     const queue = [[unit.row, unit.col, 0]];
     const parent = {};
     const pattern = (unit.movePattern || "orthogonal").toLowerCase();
-    const deltas = pattern === "square"
+    const deltas = (pattern === "square" || pattern === "orthogonal")
       ? [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
       : [[1,0],[-1,0],[0,1],[0,-1]];
     while (queue.length) {
@@ -875,7 +925,7 @@ class Game {
   }
 
   async animateMove(unit, path, options) {
-    const delay = (options && options.stepDelay) || 260;
+    const delay = (options && options.stepDelay) || 360;
     for (const [r, c] of path) {
       this.moveUnit(unit, r, c, { dash: !!(options && options.dash) });
       this.renderEntities();
@@ -1071,13 +1121,25 @@ class Game {
           if (u.type === "Magnet" && ((u.abilityCooldowns["Pull"] || 0) === 0)) {
             const def = (window.Abilities && window.Abilities.Magnet && window.Abilities.Magnet[0]);
             if (def) {
-              const tiles = this.getPatternTiles(u, def.range || u.range, (def.rangePattern || "orthogonal"));
-              const count = tiles.filter(([rr, cc]) => {
-                const occ = this.occupants[rr][cc];
-                return occ && occ.kind === "unit" && !(occ.row === u.row && occ.col === u.col);
-              }).length;
-              if (count >= 2) {
-                def.perform(this, u);
+              const targets = def.computeTargets(this, u);
+              let best = null;
+              let bestGain = -Infinity;
+              for (const [r, c] of targets) {
+                const occ = this.occupants[r][c];
+                if (!occ || occ.team === u.team) continue;
+                const stepR = r + Math.sign(u.row - r);
+                const stepC = c + Math.sign(u.col - c);
+                if (!this.inBounds(stepR, stepC)) continue;
+                if (this.occupants[stepR][stepC] != null) continue;
+                const terr = this.terrain[stepR][stepC];
+                if (terr === "wall" || terr === "water" || terr === "fortwall") continue;
+                const before = Math.max(Math.abs(r - u.row), Math.abs(c - u.col));
+                const after  = Math.max(Math.abs(stepR - u.row), Math.abs(stepC - u.col));
+                const gain = before - after;
+                if (gain > bestGain) { bestGain = gain; best = [r, c]; }
+              }
+              if (best) {
+                def.perform(this, u, best[0], best[1]);
                 await this.delay(360);
                 continue;
               }

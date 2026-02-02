@@ -207,6 +207,31 @@ body {
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
   border-color: rgba(239, 68, 68, 0.35);
 }
+.cell.hazard-fire {
+  background: radial-gradient(120px circle at 50% 50%, #6b0f1a 0%, #b9132c 40%, #7a0e1d 70%, #1a0b10 100%);
+  box-shadow: inset 0 0 16px rgba(185, 19, 44, 0.45);
+  animation: flame-flicker 1.6s ease-in-out infinite;
+}
+.cell.terrain-water {
+  background: radial-gradient(120px circle at 50% 50%, #0b1c2b 0%, #133b5c 40%, #1c597d 70%, #0a1a28 100%);
+  box-shadow: inset 0 0 16px rgba(19, 59, 92, 0.45);
+  animation: water-ripple 2.4s ease-in-out infinite;
+}
+.cell.terrain-wall {
+  background: linear-gradient(180deg, #1f243a 0%, #1a2034 100%);
+  border-color: #2a3358;
+  box-shadow: inset 0 0 12px rgba(34, 41, 68, 0.55);
+}
+.cell.terrain-fortwall {
+  background: linear-gradient(180deg, #1a1e2e 0%, #121627 100%);
+  border-color: #3b456e;
+  box-shadow: inset 0 0 14px rgba(27, 33, 56, 0.7);
+}
+.cell.terrain-bridge {
+  background: linear-gradient(180deg, #4b3a2a 0%, #3d2f22 60%, #2f241a 100%);
+  border-color: #6b4e34;
+  box-shadow: inset 0 0 12px rgba(75, 58, 42, 0.5);
+}
 .cell.pull-anim {
   box-shadow: 0 0 0 2px rgba(37,99,235,0.5), inset 0 0 12px rgba(37,99,235,0.3);
   border-color: #2563eb;
@@ -216,6 +241,21 @@ body {
   box-shadow: 0 0 0 2px rgba(147,197,253,0.6), inset 0 0 14px rgba(59,130,246,0.4);
   border-color: #60a5fa;
   animation: pulse-blue 0.7s ease-in-out 1;
+}
+@keyframes pulse-blue {
+  0% { box-shadow: 0 0 0 0 rgba(37,99,235,0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(37,99,235,0.2); }
+  100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); }
+}
+@keyframes flame-flicker {
+  0% { filter: brightness(1); transform: translateY(0); }
+  50% { filter: brightness(1.1); transform: translateY(-0.5px); }
+  100% { filter: brightness(1); transform: translateY(0); }
+}
+@keyframes water-ripple {
+  0% { filter: brightness(1); }
+  50% { filter: brightness(1.05); }
+  100% { filter: brightness(1); }
 }
 .cell.move-hl.attack-range-hl {
   box-shadow: 0 0 0 2px #22c55e66, 0 0 0 4px rgba(239, 68, 68, 0.35);
@@ -227,6 +267,11 @@ body {
 .cell .token {
   font-size: clamp(14px, 3.2vw, 22px);
   line-height: 1;
+}
+.cell .terrain-icon {
+  font-size: clamp(14px, 2.8vw, 20px);
+  line-height: 1;
+  opacity: 0.95;
 }
 
 .app-footer {
@@ -383,8 +428,8 @@ body {
 .side.right #buy-cancel {
   margin-top: 10px;
 }
-.side.left #unit-panel { height: calc(var(--grid-size) * 0.55); }
-.side.left #abilities-panel { height: calc(var(--grid-size) * 0.45); }
+.side.left #unit-panel { height: var(--grid-size); }
+.side.left #abilities-panel { display: none; }
 
 .btn-primary { background: #2563eb; border-color: #1e40af; }
 .btn-primary:hover { background: #1d4ed8; }
@@ -438,41 +483,70 @@ body {
 }
 .rune-slots {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   margin-top: 6px;
+  align-items: center;
 }
 .rune-slot {
-  width: 32px;
-  height: 32px;
-  border: 1px dashed #3b82f6;
-  border-radius: 6px;
+  width: 40px;
+  height: 46px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 18px;
   color: #3b82f6;
   cursor: default;
-  background: rgba(59, 130, 246, 0.1);
+  background: linear-gradient(180deg, rgba(59,130,246,0.12) 0%, rgba(59,130,246,0.08) 100%);
   user-select: none;
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  border: 2px solid #2a56c7;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25), inset 0 -1px 0 rgba(255,255,255,0.04);
+  position: relative;
+}
+.rune-slot::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  border: 1px solid rgba(255,255,255,0.12);
+  pointer-events: none;
 }
 .rune-slot.empty {
   cursor: pointer;
 }
 .rune-slot.empty:hover {
-  background: rgba(59, 130, 246, 0.2);
-  border-style: solid;
+  background: rgba(59, 130, 246, 0.16);
+  border-color: #3b82f6;
 }
 .rune-slot.filled {
-  border-style: solid;
-  background: #3b82f6;
+  background: linear-gradient(180deg, #2563eb 0%, #1e40af 100%);
   color: #fff;
-  font-weight: bold;
+  font-weight: 700;
   text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  box-shadow: 0 2px 8px rgba(37,99,235,0.3);
+  border-color: #1e40af;
 }
+.rune-slot.filled::after { border-color: rgba(255,255,255,0.18); }
 .rune-slot.locked {
   border-color: #4b5563;
   color: #4b5563;
   background: transparent;
+}
+
+/* Abilities Overlay layout tweaks */
+#abilities-overlay .panel {
+  width: 460px;
+  max-width: 92vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding-bottom: 12px;
+}
+#abilities-overlay .list {
+  gap: 10px;
+}
+#abilities-overlay .list li {
+  padding: 10px 12px;
+  font-size: 14px;
 }
 
 /* Rune Shop Overlay */
