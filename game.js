@@ -262,6 +262,14 @@ class Game {
         const cap = pattern.charAt(0).toUpperCase() + pattern.slice(1);
         const liR = document.createElement("li"); liR.textContent = `Range: ${rng}`;
         const liP = document.createElement("li"); liP.textContent = `Pattern: ${cap}`;
+        if (a.name === "Construct") {
+          const liA = document.createElement("li"); liA.textContent = `Area: 2x2`;
+          inner.appendChild(liA);
+        }
+        if (a.name === "Catalyze") {
+          const liA2 = document.createElement("li"); liA2.textContent = `Area: 3x3`;
+          inner.appendChild(liA2);
+        }
         const liC = document.createElement("li"); liC.textContent = `Cooldown: ${cd}`;
         inner.appendChild(liR); inner.appendChild(liP); inner.appendChild(liC);
         li.appendChild(title);
@@ -310,10 +318,13 @@ class Game {
             slot.textContent = rune.name[0]; // First letter
             slot.title = `${rune.name}: ${rune.desc}`;
           } else {
-            slot.className = "rune-slot empty";
-            slot.textContent = "+";
             if (ent.team === Config.TEAM.PLAYER) {
+              slot.className = "rune-slot empty";
+              slot.textContent = "+";
               slot.onclick = () => this.openRuneShop(ent);
+            } else {
+              slot.className = "rune-slot locked";
+              slot.textContent = "";
             }
           }
           slots.appendChild(slot);
@@ -864,7 +875,7 @@ class Game {
   }
 
   async animateMove(unit, path, options) {
-    const delay = (options && options.stepDelay) || 200;
+    const delay = (options && options.stepDelay) || 260;
     for (const [r, c] of path) {
       this.moveUnit(unit, r, c, { dash: !!(options && options.dash) });
       this.renderEntities();

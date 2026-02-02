@@ -5,7 +5,7 @@
     desc: "Select a 3x3 area to damage enemies (3x3 radius).",
     range: 3,
     rangePattern: "select",
-    damage: 3,
+    damage: 4,
     requiresTarget: true,
     computeTargets(game, unit) {
       const res = [];
