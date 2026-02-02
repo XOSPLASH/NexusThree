@@ -33,7 +33,8 @@
         }
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      unit.abilityCooldowns["Ignite"] = (unit.abilityCooldowns["Ignite"] || 0) + 2;
+      const baseCd = (Entities.unitDefs.Firecaller.cooldowns && Entities.unitDefs.Firecaller.cooldowns["Ignite"]) || 2;
+      unit.abilityCooldowns["Ignite"] = baseCd;
       if (game.playSfx) game.playSfx("ability");
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Firecaller`, ability: "Ignite" });
       game.renderEntities();

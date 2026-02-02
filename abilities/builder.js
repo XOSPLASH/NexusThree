@@ -85,7 +85,8 @@
         }
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      unit.abilityCooldowns["Construct"] = (unit.abilityCooldowns["Construct"] || 0) + 2;
+      const baseCd = (Entities.unitDefs.Builder.cooldowns && Entities.unitDefs.Builder.cooldowns["Construct"]) || 2;
+      unit.abilityCooldowns["Construct"] = baseCd;
       game.renderEntities();
       if (game.playSfx) game.playSfx("ability");
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Builder`, ability: "Construct" });

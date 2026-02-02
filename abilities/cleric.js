@@ -28,7 +28,8 @@
         }
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      unit.abilityCooldowns["Mass Heal"] = (unit.abilityCooldowns["Mass Heal"] || 0) + 2;
+      const baseCd = (Entities.unitDefs.Cleric.cooldowns && Entities.unitDefs.Cleric.cooldowns["Mass Heal"]) || 2;
+      unit.abilityCooldowns["Mass Heal"] = baseCd;
       game.playSfx && game.playSfx("heal");
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Cleric`, ability: "Mass Heal", target: `${healed} allies` });
     },

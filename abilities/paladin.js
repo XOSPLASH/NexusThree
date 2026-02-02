@@ -13,7 +13,8 @@
       if (!target) return;
       game.applyDamage(target, 4, unit);
       unit.ap = Math.max(0, unit.ap - 1);
-      unit.abilityCooldowns["Smite"] = (unit.abilityCooldowns["Smite"] || 0) + 2;
+      const baseCd = (Entities.unitDefs.Paladin.cooldowns && Entities.unitDefs.Paladin.cooldowns["Smite"]) || 2;
+      unit.abilityCooldowns["Smite"] = baseCd;
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Paladin`, ability: "Smite", target: `${target.team === "P" ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
     },
   });

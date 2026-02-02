@@ -21,7 +21,8 @@
       if (!target) return;
       game.applyDamage(target, 4, unit);
       unit.ap = Math.max(0, unit.ap - 1);
-      unit.abilityCooldowns["Snipe"] = (unit.abilityCooldowns["Snipe"] || 0) + 2;
+      const baseCd = (Entities.unitDefs.Archer.cooldowns && Entities.unitDefs.Archer.cooldowns["Snipe"]) || 2;
+      unit.abilityCooldowns["Snipe"] = baseCd;
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Archer`, ability: "Snipe", target: `${target.team === "P" ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
     },
   });

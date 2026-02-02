@@ -16,7 +16,8 @@
           if (t) game.applyDamage(t, 3, unit);
         }
         unit.ap = Math.max(0, unit.ap - 1);
-        unit.abilityCooldowns["Whirlwind"] = (unit.abilityCooldowns["Whirlwind"] || 0) + 2;
+        const baseCd = (Entities.unitDefs.Berserker.cooldowns && Entities.unitDefs.Berserker.cooldowns["Whirlwind"]) || 2;
+        unit.abilityCooldowns["Whirlwind"] = baseCd;
         game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Berserker`, ability: "Whirlwind" });
       }
     },

@@ -17,7 +17,8 @@
         if (t) game.applyDamage(t, 2, unit);
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      unit.abilityCooldowns["Charge"] = (unit.abilityCooldowns["Charge"] || 0) + 2;
+      const baseCd = (Entities.unitDefs.Warrior.cooldowns && Entities.unitDefs.Warrior.cooldowns["Charge"]) || 2;
+      unit.abilityCooldowns["Charge"] = baseCd;
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Warrior`, ability: "Charge" });
     },
   });

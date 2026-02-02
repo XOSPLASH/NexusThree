@@ -20,14 +20,6 @@ class Game {
   }
 
   init() {
-    // Rune definitions
-    window.RuneDefs = [
-      { id: "rune_hp", name: "Vitality Rune", desc: "+2 HP", cost: 2, apply: (u) => { u.maxHp += 2; u.hp += 2; } },
-      { id: "rune_dmg", name: "Power Rune", desc: "+1 Damage", cost: 3, apply: (u) => { u.dmg += 1; } },
-      { id: "rune_move", name: "Swiftness Rune", desc: "+1 Move", cost: 3, apply: (u) => { u.move += 1; } },
-      { id: "rune_range", name: "Scope Rune", desc: "+1 Range", cost: 4, apply: (u) => { u.range += 1; } },
-      { id: "rune_ap", name: "Frenzy Rune", desc: "+1 Max AP", cost: 5, apply: (u) => { u.apMax += 1; } }
-    ];
     const [pPos, aPos] = this.pickMirroredBasePositions();
     this.addEntity(Entities.makeBase(Config.TEAM.PLAYER, pPos[0], pPos[1]));
     this.addEntity(Entities.makeBase(Config.TEAM.AI, aPos[0], aPos[1]));
@@ -261,6 +253,7 @@ class Game {
         const inner = document.createElement("ul");
         inner.className = "list";
         const cd = (ent.abilityCooldowns && ent.abilityCooldowns[a.name]) || 0;
+        const baseCd = ((Entities.unitDefs[ent.type] && Entities.unitDefs[ent.type].cooldowns) ? (Entities.unitDefs[ent.type].cooldowns[a.name] || 0) : 0);
         const rng = (a.name === "Catalyze" || a.name === "Construct") ? 1 : ((typeof a.range === "number" && a.range > 0) ? a.range : ent.range);
         const pattern = (a.rangePattern || "radius");
         if (typeof a.damage === "number" && a.damage > 0) {
@@ -286,7 +279,7 @@ class Game {
           const liA2 = document.createElement("li"); liA2.textContent = `Area: 3x3`;
           inner.appendChild(liA2);
         }
-        const liC = document.createElement("li"); liC.textContent = `Cooldown: ${cd}`;
+        const liC = document.createElement("li"); liC.textContent = `Cooldown: ${cd} (base ${baseCd})`;
         inner.appendChild(liR); inner.appendChild(liP); inner.appendChild(liC);
         li.appendChild(title);
         li.appendChild(desc);
@@ -457,7 +450,7 @@ class Game {
   distanceByPattern(unit, dr, dc) {
     const a = Math.abs(dr), b = Math.abs(dc);
     const pattern = (unit.rangePattern || "square").toLowerCase();
-    if (pattern === "orthogonal" || pattern === "manhattan") return a + b;
+    if (pattern === "orthogonal" || pattern === "manhattan") return Math.max(a, b);
     if (pattern === "circle" || pattern === "euclidean") return Math.sqrt(dr * dr + dc * dc);
     if (pattern === "straight" || pattern === "thrower") return (a === 0 || b === 0) ? Math.max(a, b) : Infinity;
     return Math.max(a, b);
@@ -482,7 +475,7 @@ class Game {
         const r = unit.row + dr, c = unit.col + dc;
         if (!this.inBounds(r, c)) continue;
         if (dr === 0 && dc === 0) continue;
-        const dist = p === "orthogonal" ? Math.abs(dr) + Math.abs(dc) : Math.max(Math.abs(dr), Math.abs(dc));
+        const dist = p === "orthogonal" ? Math.max(Math.abs(dr), Math.abs(dc)) : Math.max(Math.abs(dr), Math.abs(dc));
         if (dist <= range) res.push([r, c]);
       }
     }
@@ -527,7 +520,7 @@ class Game {
       const [r, c, d] = q.shift();
       if (d >= maxSteps) continue;
       const pattern = (unit.movePattern || "orthogonal").toLowerCase();
-      const deltas = pattern === "square"
+      const deltas = (pattern === "square" || pattern === "orthogonal")
         ? [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
         : [[1,0],[-1,0],[0,1],[0,-1]];
       for (const [dr, dc] of deltas) {
@@ -1078,23 +1071,13 @@ class Game {
           if (u.type === "Magnet" && ((u.abilityCooldowns["Pull"] || 0) === 0)) {
             const def = (window.Abilities && window.Abilities.Magnet && window.Abilities.Magnet[0]);
             if (def) {
-              const targets = def.computeTargets(this, u);
-              let bestTarget = null;
-              let cluster = 0;
-              for (const [r, c] of targets) {
-                let count = 0;
-                for (let dr = -1; dr <= 1; dr++) {
-                  for (let dc = -1; dc <= 1; dc++) {
-                    const rr = r + dr, cc = c + dc;
-                    if (!this.inBounds(rr, cc)) continue;
-                    const occ = this.occupants[rr][cc];
-                    if (occ && occ.kind === "unit") count++;
-                  }
-                }
-                if (count > cluster) { cluster = count; bestTarget = [r, c]; }
-              }
-              if (bestTarget && cluster >= 2) {
-                def.perform(this, u, bestTarget[0], bestTarget[1]);
+              const tiles = this.getPatternTiles(u, def.range || u.range, (def.rangePattern || "orthogonal"));
+              const count = tiles.filter(([rr, cc]) => {
+                const occ = this.occupants[rr][cc];
+                return occ && occ.kind === "unit" && !(occ.row === u.row && occ.col === u.col);
+              }).length;
+              if (count >= 2) {
+                def.perform(this, u);
                 await this.delay(360);
                 continue;
               }

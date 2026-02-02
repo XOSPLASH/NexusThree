@@ -31,11 +31,17 @@
            target.ap = 0;
            target.stunnedTurns = Math.max((target.stunnedTurns || 0), 1);
            game.logEvent({ type: "status", msg: `${target.type} frozen by Frostbolt!` });
+           const cell = game.board.getCell(r, c);
+           if (cell) {
+             cell.classList.add("freeze-anim");
+             setTimeout(() => cell.classList.remove("freeze-anim"), 700);
+           }
         }
         game.playSfx && game.playSfx("hit");
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      unit.abilityCooldowns["Frostbolt"] = (unit.abilityCooldowns["Frostbolt"] || 0) + 2;
+      const baseCd = (Entities.unitDefs.Mage.cooldowns && Entities.unitDefs.Mage.cooldowns["Frostbolt"]) || 2;
+      unit.abilityCooldowns["Frostbolt"] = baseCd;
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Mage`, ability: "Frostbolt", target: target ? target.type : "Unknown" });
     },
   });

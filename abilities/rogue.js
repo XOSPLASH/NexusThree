@@ -80,7 +80,8 @@
       }
       
       unit.ap = Math.max(0, unit.ap - 1);
-      unit.abilityCooldowns["Shadow Strike"] = (unit.abilityCooldowns["Shadow Strike"] || 0) + 2;
+      const baseCd = (Entities.unitDefs.Rogue.cooldowns && Entities.unitDefs.Rogue.cooldowns["Shadow Strike"]) || 2;
+      unit.abilityCooldowns["Shadow Strike"] = baseCd;
     },
   });
   window.Abilities.Rogue = [makeShadowStrike()];

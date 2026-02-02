@@ -36,7 +36,8 @@
         }
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      unit.abilityCooldowns["Catalyze"] = (unit.abilityCooldowns["Catalyze"] || 0) + 2;
+      const baseCd = (Entities.unitDefs.Alchemist.cooldowns && Entities.unitDefs.Alchemist.cooldowns["Catalyze"]) || 2;
+      unit.abilityCooldowns["Catalyze"] = baseCd;
       if (game.playSfx) game.playSfx("ability");
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Alchemist`, ability: "Catalyze" });
     },

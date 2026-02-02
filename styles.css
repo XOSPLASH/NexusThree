@@ -207,6 +207,16 @@ body {
   box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35);
   border-color: rgba(239, 68, 68, 0.35);
 }
+.cell.pull-anim {
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.5), inset 0 0 12px rgba(37,99,235,0.3);
+  border-color: #2563eb;
+  animation: pulse-blue 0.6s ease-in-out 1;
+}
+.cell.freeze-anim {
+  box-shadow: 0 0 0 2px rgba(147,197,253,0.6), inset 0 0 14px rgba(59,130,246,0.4);
+  border-color: #60a5fa;
+  animation: pulse-blue 0.7s ease-in-out 1;
+}
 .cell.move-hl.attack-range-hl {
   box-shadow: 0 0 0 2px #22c55e66, 0 0 0 4px rgba(239, 68, 68, 0.35);
   border-color: #22c55e66;
@@ -259,36 +269,15 @@ body {
 
 @media (max-width: 960px) {
   :root {
-    --side-width: 300px;
-    --grid-size: min(400px, 90vw);
+    --side-width: min(28vw, 280px);
+    --grid-size: min(44vw, 360px);
   }
   .app-main {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
-    width: 100%;
-    max-width: 600px;
-    padding: 10px;
+    grid-template-columns: var(--side-width) var(--grid-size) var(--side-width);
+    width: calc(var(--side-width) * 2 + var(--grid-size) + var(--layout-gap) * 2);
+    padding: 10px var(--layout-gap);
   }
-  .side.left, .side.right {
-    width: 100%;
-    order: 2;
-  }
-  .center-wrap {
-    order: 1;
-    margin-bottom: 20px;
-  }
-  .side.left { order: 2; }
-  .side.right { order: 3; }
-  .grid {
-    width: 100%;
-    height: auto;
-    aspect-ratio: 1/1;
-  }
-  #unit-panel, #abilities-panel, #log-panel, #buy-panel {
-    height: auto;
-    max-height: 300px;
-  }
-  .panel { height: auto !important; }
+  .side .panel { height: auto; }
 }
 
 @media (max-width: 560px) {
