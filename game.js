@@ -979,6 +979,9 @@ class Game {
         this.teamDeaths[target.team] = (this.teamDeaths[target.team] || 0) + 1;
         this.entities = this.entities.filter(e => e !== target);
         this.occupants[target.row][target.col] = null;
+        const wasSelected = this.selected === target;
+        const wasAiming = this.abilityMode && this.abilityMode.unit === target;
+        if (wasSelected || wasAiming) this.deselect();
       }
     }
   }
