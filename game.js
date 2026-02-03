@@ -57,10 +57,10 @@ class Game {
         else if (t === "wall") cell.classList.add("terrain-wall");
         else if (t === "fortwall") cell.classList.add("terrain-fortwall");
         else if (t === "bridge") cell.classList.add("terrain-bridge");
-        if (t === "wall" || t === "bridge") {
+        if (t === "wall" || t === "bridge" || t === "fortwall") {
           const terrainIcon = document.createElement("span");
           terrainIcon.className = "terrain-icon";
-          terrainIcon.textContent = t === "wall" ? "🧱" : "🌉";
+          terrainIcon.textContent = t === "wall" ? "🧱" : (t === "bridge" ? "🌉" : "🪨");
           cell.appendChild(terrainIcon);
         }
       }
@@ -161,23 +161,27 @@ class Game {
     let abilEl = document.getElementById("abilities-list");
     const unitPanel = document.getElementById("unit-panel");
     const abilitiesPanel = document.getElementById("abilities-panel");
+    let btnRow = document.getElementById("ability-buttons-row");
+    if (!btnRow) {
+      btnRow = document.createElement("div");
+      btnRow.id = "ability-buttons-row";
+      if (unitPanel) unitPanel.appendChild(btnRow);
+    }
     let viewAbBtn = document.getElementById("view-abilities-btn");
     if (!viewAbBtn) {
       viewAbBtn = document.createElement("button");
       viewAbBtn.id = "view-abilities-btn";
       viewAbBtn.className = "btn btn-secondary";
-      viewAbBtn.style.marginTop = "8px";
       viewAbBtn.textContent = "View Abilities";
-      if (unitPanel) unitPanel.appendChild(viewAbBtn);
+      btnRow.appendChild(viewAbBtn);
     }
     let abilBtn = document.getElementById("ability-btn");
     if (!abilBtn) {
       abilBtn = document.createElement("button");
       abilBtn.id = "ability-btn";
       abilBtn.className = "btn btn-primary";
-      abilBtn.style.marginTop = "6px";
-      if (abilitiesPanel) abilitiesPanel.appendChild(abilBtn);
     }
+    if (btnRow && abilBtn.parentElement !== btnRow) btnRow.appendChild(abilBtn);
     if (!iconEl || !nameEl || !descEl || !statsEl || !abilEl) return;
     statsEl.innerHTML = "";
     abilEl.innerHTML = "";
@@ -252,48 +256,12 @@ class Game {
         const list = document.createElement("ul");
         list.className = "list";
         list.innerHTML = abilEl.innerHTML;
-        const abilities = (window.Abilities && window.Abilities[ent.type]) || [];
-        const def = abilities[0];
-        const cd = (ent.abilityCooldowns && def ? (ent.abilityCooldowns[def.name] || 0) : 0);
-        const isAiming = !!(def && this.abilityMode && this.abilityMode.unit === ent && this.abilityMode.def && this.abilityMode.def.name === def.name);
-        const useBtn = document.createElement("button");
-        useBtn.className = isAiming ? "btn btn-danger" : "btn btn-primary";
-        useBtn.textContent = isAiming ? "Cancel Ability" : "Use Ability";
-        const isPreview = !this.entities.includes(ent);
-        useBtn.disabled = isPreview || !def || cd > 0 || ent.ap < 1 || ent.team !== Config.TEAM.PLAYER;
-        useBtn.onclick = () => {
-          if (!def) return;
-          if (isAiming) {
-            this.abilityMode = null;
-            this.board.clearMarks();
-            this.updateUnitPanel(ent);
-            overlay.classList.add("hidden");
-            return;
-          }
-          if (((ent.abilityCooldowns && ent.abilityCooldowns[def.name]) || 0) > 0) return;
-          if (ent.ap < 1) return;
-          if (def.requiresTarget) {
-            this.abilityMode = { unit: ent, def };
-            this.showAbilityHints(ent, def);
-          } else {
-            def.perform(this, ent);
-            this.abilityMode = null;
-            this.renderEntities();
-            this.board.clearMarks();
-            this.updateHUD();
-            this.updateUnitPanel(ent);
-            if (ent.ap > 0) this.showActionHints(ent);
-            this.checkWin();
-            overlay.classList.add("hidden");
-          }
-        };
         const closeBtn = document.createElement("button");
         closeBtn.className = "btn btn-secondary";
         closeBtn.textContent = "Close";
         closeBtn.onclick = () => { overlay.classList.add("hidden"); };
         panel.appendChild(title);
         panel.appendChild(list);
-        panel.appendChild(useBtn);
         panel.appendChild(closeBtn);
         overlay.appendChild(panel);
         overlay.classList.remove("hidden");
@@ -442,7 +410,24 @@ class Game {
         const def = abilities[0];
         const cd = (ent.abilityCooldowns && ent.abilityCooldowns[def.name]) || 0;
         const isAiming = !!(this.abilityMode && this.abilityMode.unit === ent && this.abilityMode.def && this.abilityMode.def.name === def.name);
-        abilBtn.style.display = "none";
+        abilBtn.style.display = "inline-block";
+        const isPreview = !this.entities.includes(ent);
+        abilBtn.disabled = isPreview || cd > 0 || ent.ap < 1;
+        abilBtn.className = isAiming ? "btn btn-danger" : "btn btn-primary";
+        abilBtn.textContent = isAiming ? "Cancel Ability" : "Use Ability";
+        abilBtn.onclick = () => {
+          if (isPreview) return;
+          if (isAiming) {
+            this.abilityMode = null;
+            this.board.clearMarks();
+            this.updateUnitPanel(ent);
+            return;
+          }
+          if (((ent.abilityCooldowns && ent.abilityCooldowns[def.name]) || 0) > 0) return;
+          if (ent.ap < 1) return;
+          this.abilityMode = { unit: ent, def };
+          this.showAbilityHints(ent, def);
+        };
         if (isAiming) {
           abilBtn.textContent = "Cancel Ability";
           abilBtn.className = "btn btn-danger";
