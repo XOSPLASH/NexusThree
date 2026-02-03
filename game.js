@@ -770,6 +770,7 @@ class Game {
           if (!hasType && this.spendEnergy(Config.TEAM.PLAYER, cost)) {
             const u = Entities.makeUnit(Config.TEAM.PLAYER, type, r, c);
             this.addEntity(u);
+            this.purchasedUnits[Config.TEAM.PLAYER].add(type);
             this.buySelection = null;
             const cancelBtn = document.getElementById("buy-cancel");
             if (cancelBtn) cancelBtn.style.display = "none";
@@ -1784,7 +1785,7 @@ Game.prototype.renderBuyControls = function() {
           row: 0, col: 0,
           hp: def.hp, maxHp: def.hp, dmg: def.dmg, range: def.range, move: def.move,
           symbol: def.symbol, ability: def.ability, rangePattern: def.rangePattern, movePattern: def.movePattern || "orthogonal",
-          abilityCooldowns: {}, apMax: 2, ap: 2,
+          abilityCooldowns: {}, runes: [], apMax: 2, ap: 2,
         };
         this.updateUnitPanel(preview);
       });
