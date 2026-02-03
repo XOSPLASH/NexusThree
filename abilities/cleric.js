@@ -3,7 +3,7 @@
   const makeMassHeal = () => ({
     name: "Mass Heal",
     desc: "Heal all adjacent allies for 2 HP.",
-    range: 1,
+    range: 2,
     rangePattern: "square",
     heal: 2,
     requiresTarget: false,

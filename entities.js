@@ -118,7 +118,7 @@ const unitDefs = {
     ability: "Ignite 3x3 area (burn)",
     rangePattern: "square",
     movePattern: "orthogonal",
-    cooldowns: { "Ignite": 2 }
+    cooldowns: { "Ignite": 3 }
   },
   Magnet: {
     hp: 8,

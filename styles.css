@@ -337,9 +337,14 @@ body {
 }
 @media (orientation: landscape) and (max-height: 460px) {
   :root {
+    --layout-gap: 12px;
+    --side-width: min(26vw, 240px);
     --grid-size: min(100vh - 140px, calc(100vw - (var(--side-width) * 2 + var(--layout-gap) * 4)));
   }
+  .app-main { padding: 8px var(--layout-gap); }
+  .grid { gap: 5px; padding: 10px; }
   .side .panel { height: var(--grid-size); }
+  .side.left #unit-panel { height: var(--grid-size); overflow-y: auto; }
   .turnbar { padding: 4px 6px; }
   .energy-chip { font-size: 11px; padding: 3px 6px; }
 }

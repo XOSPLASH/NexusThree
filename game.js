@@ -525,7 +525,11 @@ class Game {
   distanceByPattern(unit, dr, dc) {
     const a = Math.abs(dr), b = Math.abs(dc);
     const pattern = (unit.rangePattern || "square").toLowerCase();
-    if (pattern === "orthogonal" || pattern === "manhattan") return Math.max(a, b);
+    if (pattern === "orthogonal") {
+      const aligned = ((a === 0 && b > 0) || (b === 0 && a > 0) || (a === b && a > 0));
+      return aligned ? Math.max(a, b) : Infinity;
+    }
+    if (pattern === "manhattan") return Math.max(a, b);
     if (pattern === "circle" || pattern === "euclidean") return Math.sqrt(dr * dr + dc * dc);
     if (pattern === "straight" || pattern === "thrower") return (a === 0 || b === 0) ? Math.max(a, b) : Infinity;
     return Math.max(a, b);
@@ -545,12 +549,23 @@ class Game {
       }
       return res;
     }
+    if (p === "orthogonal") {
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+      for (const [dr, dc] of dirs) {
+        for (let s = 1; s <= range; s++) {
+          const r = unit.row + dr * s, c = unit.col + dc * s;
+          if (!this.inBounds(r, c)) break;
+          res.push([r, c]);
+        }
+      }
+      return res;
+    }
     for (let dr = -range; dr <= range; dr++) {
       for (let dc = -range; dc <= range; dc++) {
         const r = unit.row + dr, c = unit.col + dc;
         if (!this.inBounds(r, c)) continue;
         if (dr === 0 && dc === 0) continue;
-        const dist = p === "orthogonal" ? Math.max(Math.abs(dr), Math.abs(dc)) : Math.max(Math.abs(dr), Math.abs(dc));
+        const dist = Math.max(Math.abs(dr), Math.abs(dc));
         if (dist <= range) res.push([r, c]);
       }
     }
