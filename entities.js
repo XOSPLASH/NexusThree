@@ -139,7 +139,7 @@ const unitDefs = {
     move: 2,
     cost: 3,
     symbol: "☠️",
-    ability: "Gains damage as allies die",
+    ability: "Gain +1 DMG/HP/Max HP per ally death",
     rangePattern: "orthogonal",
     movePattern: "orthogonal"
   },

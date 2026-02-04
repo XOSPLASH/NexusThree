@@ -15,6 +15,7 @@ class Game {
     this.energy = { [Config.TEAM.PLAYER]: Config.ENERGY_START_PLAYER, [Config.TEAM.AI]: Config.ENERGY_START_AI };
     this.energyGenerated = { [Config.TEAM.PLAYER]: Config.ENERGY_START_PLAYER, [Config.TEAM.AI]: Config.ENERGY_START_AI };
     this.energyGain = { [Config.TEAM.PLAYER]: Config.ENERGY_START_GAIN, [Config.TEAM.AI]: Config.ENERGY_START_GAIN };
+    this.energyGainDelay = { [Config.TEAM.PLAYER]: 1, [Config.TEAM.AI]: 1 };
     this.purchasedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
     this.init();
   }
@@ -300,13 +301,14 @@ class Game {
         else unitPanel.appendChild(runePanel);
       }
     }
+    const base = Entities.unitDefs[ent.type] || {};
     const stats = [
-      ["HP", `${ent.hp}/${ent.maxHp}`],
-      ["Damage", `${ent.dmg}`],
-      ["Range", `${ent.range}`],
-      ["Move", `${ent.move}`],
-      ["Movement", `${((ent.movePattern || "orthogonal").charAt(0).toUpperCase() + (ent.movePattern || "orthogonal").slice(1))}`],
+      ["HP", `${ent.hp}/${ent.maxHp}`, base.hp],
+      ["Damage", `${ent.dmg}`, base.dmg],
+      ["Range", `${ent.range}`, base.range],
       ["Range Pattern", `${((ent.rangePattern || "square").charAt(0).toUpperCase() + (ent.rangePattern || "square").slice(1))}`],
+      ["Move", `${ent.move}`, base.move],
+      ["Movement Pattern", `${((ent.movePattern || "orthogonal").charAt(0).toUpperCase() + (ent.movePattern || "orthogonal").slice(1))}`],
       ["AP", ent.kind === "unit" ? `${ent.ap}/${ent.apMax}` : "—"],
       ["Defense", "0"],
     ];
@@ -315,6 +317,14 @@ class Game {
       if (k === "AP" && ent.kind === "unit") {
         const pips = Array.from({ length: ent.apMax }, (_, i) => `<span class="ap-pip${i < ent.ap ? '' : ' used'}"></span>`).join('');
         li.innerHTML = `AP: ${v} <span class="ap-pips">${pips}</span>`;
+      } else if (k === "HP") {
+        const delta = Math.max(0, (ent.maxHp - (base.hp || ent.maxHp)));
+        li.textContent = `HP: ${v}${delta > 0 ? ` (+${delta})` : ""}`;
+      } else if (k === "Damage" || k === "Range" || k === "Move") {
+        const b = stats.find(([name]) => name === k)[2];
+        const cur = k === "Damage" ? ent.dmg : (k === "Range" ? ent.range : ent.move);
+        const delta = (typeof b === "number") ? (cur - b) : 0;
+        li.textContent = `${k}: ${v}${delta > 0 ? ` (+${delta})` : ""}`;
       } else {
         li.textContent = `${k}: ${v}`;
       }
@@ -366,8 +376,8 @@ class Game {
           inner.appendChild(liA2);
         }
         if (a.name === "Vengeance" && ent.type === "Avenger") {
-          const bonus = Math.min(5, (this.teamDeaths && this.teamDeaths[ent.team]) || 0);
-          const liV = document.createElement("li"); liV.textContent = `Bonus Damage: +${bonus} (from ally deaths)`;
+          const bonus = (this.teamDeaths && this.teamDeaths[ent.team]) || 0;
+          const liV = document.createElement("li"); liV.textContent = `Buff Strength: +${bonus} (per ally death)`;
           inner.appendChild(liV);
         }
         const liC = document.createElement("li"); liC.textContent = `Cooldown: ${cd} (base ${baseCd})`;
@@ -1666,10 +1676,16 @@ Game.prototype.generateEnergy = function(team) {
   const max = Config.ENERGY_MAX_TOTAL;
   if (produced >= max) return;
   const gain = this.energyGain[team];
-  const add = Math.min(gain, max - produced);
+  let add = Math.min(gain, max - produced);
+  if (this.energyGainDelay && this.energyGainDelay[team] > 0) {
+    add = Math.min(2, max - produced);
+    this.energyGainDelay[team] -= 1;
+  }
   this.energy[team] += add;
   this.energyGenerated[team] += add;
-  if (this.energyGain[team] < Config.ENERGY_GAIN_CAP) this.energyGain[team] += 1;
+  if (this.energyGainDelay && this.energyGainDelay[team] <= 0) {
+    if (this.energyGain[team] < Config.ENERGY_GAIN_CAP) this.energyGain[team] += 1;
+  }
   this.updateHUD();
 };
 
