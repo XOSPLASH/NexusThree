@@ -14,8 +14,10 @@ class Game {
     this.log = [];
     this.energy = { [Config.TEAM.PLAYER]: Config.ENERGY_START_PLAYER, [Config.TEAM.AI]: Config.ENERGY_START_AI };
     this.energyGenerated = { [Config.TEAM.PLAYER]: Config.ENERGY_START_PLAYER, [Config.TEAM.AI]: Config.ENERGY_START_AI };
-    this.energyGain = { [Config.TEAM.PLAYER]: Config.ENERGY_START_GAIN, [Config.TEAM.AI]: Config.ENERGY_START_GAIN };
-    this.energyGainDelay = { [Config.TEAM.PLAYER]: 1, [Config.TEAM.AI]: 1 };
+    this.energyGainStep = { [Config.TEAM.PLAYER]: 0, [Config.TEAM.AI]: 0 }; // 0->+3, 1->+4, 2->+5, then +6
+    this.energyGainSixLeft = { [Config.TEAM.PLAYER]: 6, [Config.TEAM.AI]: 6 }; // next 6 turns at +6
+    this.energyDelayOne = { [Config.TEAM.PLAYER]: false, [Config.TEAM.AI]: true }; // delay AI first gain
+    this.nexusOwners = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
     this.purchasedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
     this.init();
   }
@@ -37,6 +39,12 @@ class Game {
   }
 
   addEntity(ent) {
+    if (ent && ent.kind === "unit" && ent.type === "Skeleton") {
+      if (!(ent.summonedBy === "Necromancer")) {
+        this.logEvent({ type: "error", msg: "Blocked spawn: Skeleton can only be summoned by Necromancer" });
+        return;
+      }
+    }
     this.entities.push(ent);
     this.occupants[ent.row][ent.col] = ent;
   }
@@ -45,7 +53,7 @@ class Game {
     this.board.forEachCell(cell => {
       cell.innerHTML = "";
       cell.style.borderColor = "";
-      cell.classList.remove("terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","hazard-fire");
+      cell.classList.remove("terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","hazard-fire");
     });
     // Terrain tokens
     for (let r = 0; r < Config.ROWS; r++) {
@@ -58,6 +66,14 @@ class Game {
         else if (t === "wall") cell.classList.add("terrain-wall");
         else if (t === "fortwall") cell.classList.add("terrain-fortwall");
         else if (t === "bridge") cell.classList.add("terrain-bridge");
+        else if (t === "nexus") {
+          cell.classList.add("terrain-nexus");
+          const owner = this.nexusOwners[r][c];
+          const icon = document.createElement("span");
+          icon.className = `nexus-icon ${owner === Config.TEAM.PLAYER ? "nexus-player" : (owner === Config.TEAM.AI ? "nexus-ai" : "nexus-neutral")}`;
+          icon.textContent = "◆";
+          cell.appendChild(icon);
+        }
         if (t === "wall" || t === "bridge" || t === "fortwall") {
           const terrainIcon = document.createElement("span");
           terrainIcon.className = "terrain-icon";
@@ -201,12 +217,19 @@ class Game {
     }
     if (ent.kind === "tile") {
       iconEl.textContent = "□";
-      nameEl.textContent = `Empty Tile`;
+      const terrNameSimple = ent.terrain === "wall" ? "Wall"
+        : ent.terrain === "water" ? "Water"
+        : ent.terrain === "fortwall" ? "Fortified Wall"
+        : ent.terrain === "bridge" ? "Bridge"
+        : ent.terrain === "nexus" ? "Nexus"
+        : "Plain";
+      nameEl.textContent = terrNameSimple;
       descEl.textContent = `Coordinates: (${ent.row}, ${ent.col})`;
         const terrName = ent.terrain === "wall" ? "Wall"
           : ent.terrain === "water" ? "Water"
           : ent.terrain === "fortwall" ? "Fortified Wall"
           : ent.terrain === "bridge" ? "Bridge"
+          : ent.terrain === "nexus" ? `Nexus (${this.nexusOwners[ent.row][ent.col] === Config.TEAM.PLAYER ? "Player" : (this.nexusOwners[ent.row][ent.col] === Config.TEAM.AI ? "AI" : "Neutral")})`
           : "Plain";
         const hz = this.hazards[ent.row][ent.col];
         const hazardName = hz && hz.kind === "fire" ? `Fire (${hz.turns} turn(s))` : "None";
@@ -283,7 +306,9 @@ class Game {
           slot.textContent = rune.name[0];
           slot.title = `${rune.name}: ${rune.desc}`;
         } else {
-          if (ent.team === Config.TEAM.PLAYER) {
+          const unlockLevel = i + 1;
+          const canUse = (ent.level || 1) >= unlockLevel && ent.team === Config.TEAM.PLAYER;
+          if (canUse) {
             slot.className = "rune-slot empty";
             slot.textContent = "+";
             slot.onclick = () => this.openRuneShop(ent);
@@ -305,14 +330,12 @@ class Game {
     const stats = [
       ["HP", `${ent.hp}/${ent.maxHp}`, base.hp],
       ["Damage", `${ent.dmg}`, base.dmg],
-      ["Range", `${ent.range}`, base.range],
-      ["Range Pattern", `${((ent.rangePattern || "square").charAt(0).toUpperCase() + (ent.rangePattern || "square").slice(1))}`],
-      ["Move", `${ent.move}`, base.move],
-      ["Movement Pattern", `${((ent.movePattern || "orthogonal").charAt(0).toUpperCase() + (ent.movePattern || "orthogonal").slice(1))}`],
+      ["Range", `${ent.range}`, base.range, (ent.rangePattern || "square")],
+      ["Move", `${ent.move}`, base.move, (ent.movePattern || "orthogonal")],
       ["AP", ent.kind === "unit" ? `${ent.ap}/${ent.apMax}` : "—"],
       ["Defense", "0"],
     ];
-    for (const [k, v] of stats) {
+    for (const [k, v, b, sub] of stats) {
       const li = document.createElement("li");
       if (k === "AP" && ent.kind === "unit") {
         const pips = Array.from({ length: ent.apMax }, (_, i) => `<span class="ap-pip${i < ent.ap ? '' : ' used'}"></span>`).join('');
@@ -321,14 +344,27 @@ class Game {
         const delta = Math.max(0, (ent.maxHp - (base.hp || ent.maxHp)));
         li.textContent = `HP: ${v}${delta > 0 ? ` (+${delta})` : ""}`;
       } else if (k === "Damage" || k === "Range" || k === "Move") {
-        const b = stats.find(([name]) => name === k)[2];
         const cur = k === "Damage" ? ent.dmg : (k === "Range" ? ent.range : ent.move);
         const delta = (typeof b === "number") ? (cur - b) : 0;
-        li.textContent = `${k}: ${v}${delta > 0 ? ` (+${delta})` : ""}`;
+        const subLabel = sub ? ` <span class="muted-sub">${sub.charAt(0).toUpperCase() + sub.slice(1)}</span>` : "";
+        li.innerHTML = `${k}: ${v}${delta > 0 ? ` (+${delta})` : ""}${subLabel}`;
       } else {
         li.textContent = `${k}: ${v}`;
       }
       statsEl.appendChild(li);
+    }
+    // Level + progress bar
+    if (ent.kind === "unit") {
+      const thresholds = { 1: 6, 2: 12 };
+      const level = ent.level || 1;
+      const prev = level === 1 ? 0 : (level === 2 ? 6 : 12);
+      const next = level >= 3 ? 12 : thresholds[level];
+      const cur = Math.max(0, (ent.exp || 0) - prev);
+      const max = Math.max(1, next - prev);
+      const pct = Math.max(0, Math.min(1, cur / max));
+      const li = document.createElement("li");
+      li.innerHTML = `Level: ${level} <div class="level-bar"><div class="fill" style="width:${Math.round(pct*100)}%"></div></div>`;
+      statsEl.insertBefore(li, statsEl.firstChild);
     }
     const abilities = (window.Abilities && window.Abilities[ent.type]) || [];
     if (abilities.length === 0) {
@@ -613,27 +649,17 @@ class Game {
   }
 
   getReachableTiles(unit, maxSteps) {
-    const q = [[unit.row, unit.col, 0]];
-    const seen = new Set([`${unit.row},${unit.col}`]);
     const res = [];
-    while (q.length) {
-      const [r, c, d] = q.shift();
-      if (d >= maxSteps) continue;
-      const pattern = (unit.movePattern || "orthogonal").toLowerCase();
-      const deltas = (pattern === "square" || pattern === "orthogonal")
-        ? [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
-        : [[1,0],[-1,0],[0,1],[0,-1]];
-      for (const [dr, dc] of deltas) {
-        const nr = r + dr, nc = c + dc;
-        const key = `${nr},${nc}`;
-        if (!this.inBounds(nr, nc)) continue;
-        if (seen.has(key)) continue;
-        const terr = this.terrain[nr][nc];
-        if (terr === "wall" || terr === "water" || terr === "fortwall") continue;
-        if (this.occupants[nr][nc] != null) continue;
-        seen.add(key);
-        res.push([nr, nc]);
-        q.push([nr, nc, d + 1]);
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+    for (const [dr, dc] of dirs) {
+      for (let s = 1; s <= maxSteps; s++) {
+        const r = unit.row + dr * s;
+        const c = unit.col + dc * s;
+        if (!this.inBounds(r, c)) break;
+        const terr = this.terrain[r][c];
+        if (terr === "wall" || terr === "water" || terr === "fortwall") break;
+        if (this.occupants[r][c] != null) break;
+        res.push([r, c]);
       }
     }
     return res;
@@ -704,27 +730,26 @@ class Game {
   showAbilityHints(unit, def) {
     this.board.clearMarks();
     this.board.markSelected(unit.row, unit.col);
-    const tiles = [];
     const pattern = (def.rangePattern || "radius").toLowerCase();
+    let toMark = [];
     if (pattern !== "select") {
       const baseRange = typeof def.range === "number" && def.range > 0 ? def.range : unit.range;
-      const area = this.getPatternTiles(unit, baseRange, pattern);
-      for (const [r, c] of area) tiles.push([r, c]);
+      toMark = this.getPatternTiles(unit, baseRange, pattern);
+      this.board.markPositions(toMark, "ability-hl");
+    } else {
+      const baseRange = typeof def.range === "number" && def.range > 0 ? def.range : unit.range;
+      const isNecro = (def.name || "").toLowerCase().includes("raise");
+      if (!isNecro) {
+        const area = this.getPatternTiles(unit, baseRange, "square");
+        this.board.markPositions(area, "ability-hl");
+        toMark = area;
+      }
+      const targets = def && typeof def.computeTargets === "function" ? def.computeTargets(this, unit) : [];
+      this.board.markPositions(targets, "ability-hl");
+      toMark = targets;
     }
-    const targets = def && typeof def.computeTargets === "function" ? def.computeTargets(this, unit) : [];
-    for (const [r, c] of targets) tiles.push([r, c]);
-    const uniq = [];
-    const seen = new Set();
-    for (const [r, c] of tiles) {
-      const k = `${r},${c}`;
-      if (seen.has(k)) continue;
-      seen.add(k);
-      uniq.push([r, c]);
-    }
-    const cls = (pattern === "select") ? "ability-range-max" : "ability-hl";
-    this.board.markPositions(uniq, cls);
     if (!this.abilityMode) this.abilityMode = { unit, def };
-    this.abilityMode.targets = uniq;
+    this.abilityMode.targets = toMark;
   }
 
   getChargeTargets(unit) {
@@ -817,7 +842,6 @@ class Game {
       const targets = def.requiresTarget ? (def.computeTargets(this, u).map(JSON.stringify)) : [];
       if (!def.requiresTarget) {
         def.perform(this, u);
-        this.abilityMode = null;
       } else if (targets.includes(key)) {
         def.perform(this, u, r, c);
         const tar = this.board.getCell(r, c) || this.board.getCell(u.row, u.col);
@@ -826,7 +850,14 @@ class Game {
           setTimeout(() => tar.classList.remove("ability-anim"), 500);
         }
         this.playSfx && this.playSfx("ability");
+      }
+      if (!this.abilityMode || this.abilityMode.done) {
         this.abilityMode = null;
+      } else {
+        const tiles = def.computeTargets(this, u);
+        this.board.clearMarks();
+        this.board.markSelected(u.row, u.col);
+        this.board.markPositions(tiles, "ability-hl");
       }
       this.renderEntities();
       this.board.clearMarks();
@@ -926,6 +957,13 @@ class Game {
     if (hz && hz.kind === "fire" && this.terrain[r][c] !== "water") {
       unit.burnTurns = Math.max((unit.burnTurns || 0), 1);
     }
+    if (this.terrain[r][c] === "nexus") {
+      const prev = this.nexusOwners[r][c];
+      if (prev !== unit.team) {
+        this.nexusOwners[r][c] = unit.team;
+        this.awardExp(unit, 3, null);
+      }
+    }
     if (dst) {
       dst.classList.add(opt && opt.dash ? "dash-anim" : "move-anim");
       setTimeout(() => dst.classList.remove("dash-anim", "move-anim"), 520);
@@ -937,42 +975,25 @@ class Game {
   }
 
   getMovePath(unit, tr, tc, maxSteps) {
-    const start = [unit.row, unit.col];
-    const goalKey = `${tr},${tc}`;
-    const seen = new Set([`${start[0]},${start[1]}`]);
-    const queue = [[unit.row, unit.col, 0]];
-    const parent = {};
-    const pattern = (unit.movePattern || "orthogonal").toLowerCase();
-    const deltas = (pattern === "square" || pattern === "orthogonal")
-      ? [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
-      : [[1,0],[-1,0],[0,1],[0,-1]];
-    while (queue.length) {
-      const [r, c, d] = queue.shift();
-      if (d >= maxSteps) continue;
-      for (const [dr, dc] of deltas) {
-        const nr = r + dr, nc = c + dc;
-        const key = `${nr},${nc}`;
-        if (!this.inBounds(nr, nc)) continue;
-        if (seen.has(key)) continue;
-        const terr = this.terrain[nr][nc];
-        if (terr === "wall" || terr === "water" || terr === "fortwall") continue;
-        if (this.occupants[nr][nc] != null && !(nr === tr && nc === tc)) continue;
-        seen.add(key);
-        parent[key] = `${r},${c}`;
-        if (key === goalKey) {
-          const path = [];
-          let cur = key;
-          while (cur && cur !== `${start[0]},${start[1]}`) {
-            const [pr, pc] = cur.split(",").map(Number);
-            path.unshift([pr, pc]);
-            cur = parent[cur];
-          }
-          return path;
-        }
-        queue.push([nr, nc, d + 1]);
-      }
+    const sr = unit.row, sc = unit.col;
+    const dr = tr - sr, dc = tc - sc;
+    const a = Math.abs(dr), b = Math.abs(dc);
+    // Must be aligned to one of 8 directions
+    if (!((a === 0 && b > 0) || (b === 0 && a > 0) || (a === b && a > 0))) return null;
+    const steps = Math.max(a, b);
+    if (steps > maxSteps) return null;
+    const stepR = Math.sign(dr), stepC = Math.sign(dc);
+    const path = [];
+    let r = sr, c = sc;
+    for (let s = 1; s <= steps; s++) {
+      r += stepR; c += stepC;
+      if (!this.inBounds(r, c)) return null;
+      const terr = this.terrain[r][c];
+      if (terr === "wall" || terr === "water" || terr === "fortwall") return null;
+      if (this.occupants[r][c] != null && !(r === tr && c === tc)) return null;
+      path.push([r, c]);
     }
-    return null;
+    return path;
   }
 
   async animateMove(unit, path, options) {
@@ -995,11 +1016,21 @@ class Game {
       setTimeout(() => cell.classList.remove("hit-anim"), 360);
     }
     this.playSfx && this.playSfx("hit");
+    if (source && source.kind === "unit") {
+      let gain = Math.max(0, before - target.hp);
+      if (target.kind === "unit") {
+        const levelDiff = (source.level || 1) - (target.level || 1);
+        const factor = Math.max(0.5, 1 - 0.2 * levelDiff);
+        gain = Math.floor(gain * factor);
+      }
+      this.awardExp(source, gain, target);
+    }
     if (target.hp === 0 && before > 0) {
       if (target.kind === "unit") {
         const killer = source ? `${source.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${source.type}` : "Unknown";
         const victim = `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.type}`;
         this.logEvent({ type: "death", killer, victim });
+        if (source && source.kind === "unit") this.awardExp(source, 4, target);
         this.teamDeaths = this.teamDeaths || { [Config.TEAM.PLAYER]: 0, [Config.TEAM.AI]: 0 };
         this.teamDeaths[target.team] = (this.teamDeaths[target.team] || 0) + 1;
         this.entities = this.entities.filter(e => e !== target);
@@ -1012,13 +1043,7 @@ class Game {
   }
 
   attack(attacker, target) {
-    let dmg = attacker.dmg;
-    if (attacker.type === "Avenger") {
-      this.teamDeaths = this.teamDeaths || { [Config.TEAM.PLAYER]: 0, [Config.TEAM.AI]: 0 };
-      const bonus = Math.min(5, this.teamDeaths[attacker.team] || 0);
-      dmg += bonus;
-    }
-    this.applyDamage(target, dmg, attacker);
+    this.applyDamage(target, attacker.dmg, attacker);
   }
 
   heal(mage, ally) {
@@ -1043,6 +1068,7 @@ class Game {
     this.turn = Config.TEAM.AI;
     this.updateHUD();
     this.generateEnergy(Config.TEAM.AI);
+    this.applyNexusEffects(Config.TEAM.AI);
     this.resetAPForTeam(Config.TEAM.AI);
     this.applyHazardsForTeam(Config.TEAM.AI);
     this.tickCooldowns(Config.TEAM.AI);
@@ -1050,6 +1076,7 @@ class Game {
     this.checkWin();
     this.turn = Config.TEAM.PLAYER;
     this.generateEnergy(Config.TEAM.PLAYER);
+    this.applyNexusEffects(Config.TEAM.PLAYER);
     this.resetAPForTeam(Config.TEAM.PLAYER);
     this.applyHazardsForTeam(Config.TEAM.PLAYER);
     this.tickCooldowns(Config.TEAM.PLAYER);
@@ -1651,6 +1678,34 @@ Game.prototype.playSfx = function(kind) {
     this.terrain[mr][mc] = terr;
     pairsPlaced++;
   }
+  this.placeNexuses();
+};
+
+Game.prototype.placeNexuses = function() {
+  let tries = 0;
+  const centerRadius = 2;
+  const ok = (r, c) => this.inBounds(r, c) && this.occupants[r][c] == null && this.terrain[r][c] == null;
+  while (tries++ < 1000) {
+    const r = Math.floor(Config.ROWS / 2) + (Math.floor(Math.random() * (centerRadius * 2 + 1)) - centerRadius);
+    const c = Math.floor(Config.COLS / 2) + (Math.floor(Math.random() * (centerRadius * 2 + 1)) - centerRadius);
+    const pts = [
+      [r, c],
+      [r, Config.COLS - 1 - c],
+      [Config.ROWS - 1 - r, c],
+      [Config.ROWS - 1 - r, Config.COLS - 1 - c],
+    ];
+    const spaced = (a, b) => Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])) >= 2;
+    const spacingOk =
+      spaced(pts[0], pts[1]) && spaced(pts[0], pts[2]) && spaced(pts[0], pts[3]) &&
+      spaced(pts[1], pts[2]) && spaced(pts[1], pts[3]) && spaced(pts[2], pts[3]);
+    if (spacingOk && pts.every(([rr, cc]) => ok(rr, cc))) {
+      for (const [rr, cc] of pts) {
+        this.terrain[rr][cc] = "nexus";
+        this.nexusOwners[rr][cc] = null;
+      }
+      break;
+    }
+  }
 };
 
 Game.prototype.pickMirroredBasePositions = function() {
@@ -1675,18 +1730,42 @@ Game.prototype.generateEnergy = function(team) {
   const produced = this.energyGenerated[team];
   const max = Config.ENERGY_MAX_TOTAL;
   if (produced >= max) return;
-  const gain = this.energyGain[team];
-  let add = Math.min(gain, max - produced);
-  if (this.energyGainDelay && this.energyGainDelay[team] > 0) {
-    add = Math.min(2, max - produced);
-    this.energyGainDelay[team] -= 1;
+  if (this.energyDelayOne && this.energyDelayOne[team]) {
+    this.energyDelayOne[team] = false;
+    this.updateHUD();
+    return;
   }
+  let add = 0;
+  const step = this.energyGainStep[team];
+  if (step === 0) add = 3;
+  else if (step === 1) add = 4;
+  else if (step === 2) add = 5;
+  else {
+    add = 6;
+    if (this.energyGainSixLeft[team] > 0) {
+      this.energyGainSixLeft[team] -= 1;
+    }
+  }
+  this.energyGainStep[team] = step + 1;
   this.energy[team] += add;
   this.energyGenerated[team] += add;
-  if (this.energyGainDelay && this.energyGainDelay[team] <= 0) {
-    if (this.energyGain[team] < Config.ENERGY_GAIN_CAP) this.energyGain[team] += 1;
-  }
   this.updateHUD();
+};
+
+Game.prototype.applyNexusEffects = function(team) {
+  let owned = 0;
+  for (let r = 0; r < Config.ROWS; r++) {
+    for (let c = 0; c < Config.COLS; c++) {
+      if (this.terrain[r][c] === "nexus" && this.nexusOwners[r][c] === team) owned++;
+    }
+  }
+  if (owned <= 0) return;
+  const opp = team === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER;
+  const base = this.entities.find(e => e.kind === "base" && e.team === opp);
+  if (base) {
+    this.applyDamage(base, 2 * owned, null);
+    this.logEvent({ type: "nexus", msg: `${owned} nexus(es) dealt ${2*owned} to ${opp === "AI" ? "AI" : "Player"} base` });
+  }
 };
 
 Game.prototype.spendEnergy = function(team, amount) {
@@ -1699,6 +1778,10 @@ Game.prototype.spendEnergy = function(team, amount) {
     };
 
 Game.prototype.spawnUnitNearBase = function(team, type) {
+  if (type === "Skeleton") {
+    this.logEvent({ type: "error", msg: "Spawn denied: Skeleton is summon-only" });
+    return false;
+  }
   if (this.purchasedUnits[team].has(type)) return false;
   if (this.entities.some(e => e.kind === "unit" && e.team === team && e.type === type)) return false;
   const base = this.entities.find(e => e.kind === "base" && e.team === team);
@@ -1731,7 +1814,7 @@ Game.prototype.buyRune = function(unit, runeId) {
   const rune = window.RuneDefs.find(r => r.id === runeId);
   if (!rune) return;
   if (this.energy[unit.team] < rune.cost) return;
-  if (unit.runes.length >= 3) return;
+  if (unit.runes.length >= Math.min(3, unit.level || 1)) return;
   if (unit.runes.some(r => r.id === runeId)) return;
 
   this.spendEnergy(unit.team, rune.cost);
@@ -1740,6 +1823,22 @@ Game.prototype.buyRune = function(unit, runeId) {
   this.playSfx && this.playSfx("heal");
   this.updateUnitPanel(unit);
   this.updateHUD();
+};
+ 
+Game.prototype.awardExp = function(unit, amount, targetOpt) {
+  if (!unit || unit.kind !== "unit") return;
+  if (unit.level >= 3) return;
+  const scaled = Math.max(0, amount);
+  unit.exp += scaled;
+  const thresholds = { 1: 6, 2: 12 };
+  while (unit.level < 3 && unit.exp >= thresholds[unit.level]) {
+    unit.level += 1;
+    if (unit.level === 2) { unit.dmg += 1; }
+    if (unit.level === 3) { unit.maxHp += 1; unit.hp = Math.min(unit.maxHp, unit.hp + 1); }
+    this.playSfx && this.playSfx("heal");
+    this.logEvent({ type: "level", msg: `${unit.team === "P" ? "Player" : "AI"} ${unit.type} reached Level ${unit.level}` });
+  }
+  this.updateUnitPanel(unit);
 };
 
 Game.prototype.getBuyPositions = function(team) {
@@ -1765,6 +1864,7 @@ Game.prototype.renderBuyControls = function() {
   const defs = window.Entities.unitDefs;
   const groups = {};
   Object.keys(defs).forEach(t => {
+    if (defs[t].hiddenFromShop) return;
     const c = defs[t].cost || 0;
     if (!groups[c]) groups[c] = [];
     groups[c].push(t);
@@ -1846,7 +1946,11 @@ Game.prototype.renderBuyControls = function() {
 
 Game.prototype.chooseAIPurchaseType = function() {
   const defs = window.Entities.unitDefs;
-  const affordable = Object.keys(defs).filter(t => this.energy[Config.TEAM.AI] >= (defs[t].cost || 0));
+  const affordable = Object.keys(defs).filter(t => {
+    if (t === "Skeleton") return false;
+    if (defs[t].hiddenFromShop) return false;
+    return this.energy[Config.TEAM.AI] >= (defs[t].cost || 0);
+  });
   if (affordable.length === 0) return null;
   const aiUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.AI);
   const playerUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER);

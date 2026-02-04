@@ -25,34 +25,16 @@
         cell.classList.add("pull-anim");
         setTimeout(() => cell.classList.remove("pull-anim"), 620);
       }
-      const targets = [];
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
-          if (dr === 0 && dc === 0) continue;
-          const ar = unit.row + dr, ac = unit.col + dc;
-          if (!game.inBounds(ar, ac)) continue;
-          const terr = game.terrain[ar][ac];
-          if (terr === "wall" || terr === "water" || terr === "fortwall") continue;
-          if (game.occupants[ar][ac] != null) continue;
-          targets.push([ar, ac]);
-        }
-      }
-      let best = null;
-      for (const [tr, tc] of targets) {
-        const path = game.getMovePath(occ, tr, tc, 99);
-        if (path && (best == null || path.length < best.path.length)) {
-          best = { r: tr, c: tc, path };
-        }
-      }
-      if (best && best.path && best.path.length) {
-        game.animateMove(occ, best.path, { dash: true });
-      } else {
-        const stepR = r + Math.sign(unit.row - r);
-        const stepC = c + Math.sign(unit.col - c);
-        if (game.inBounds(stepR, stepC)) {
-          const terr = game.terrain[stepR][stepC];
-          if (!(terr === "wall" || terr === "water" || terr === "fortwall") && game.occupants[stepR][stepC] == null) {
-            game.moveUnit(occ, stepR, stepC, { dash: true });
+      const destR = unit.row + Math.sign(r - unit.row);
+      const destC = unit.col + Math.sign(c - unit.col);
+      if (game.inBounds(destR, destC)) {
+        const terr = game.terrain[destR][destC];
+        if (!(terr === "wall" || terr === "water" || terr === "fortwall") && game.occupants[destR][destC] == null) {
+          const path = game.getMovePath(occ, destR, destC, 99);
+          if (path && path.length) {
+            game.animateMove(occ, path, { dash: true });
+          } else {
+            game.moveUnit(occ, destR, destC, { dash: true });
           }
         }
       }

@@ -88,7 +88,7 @@ const unitDefs = {
     hp: 5,
     range: 1,
     dmg: 4,
-    move: 3,
+    move: 2,
     cost: 3,
     symbol: "🗡️",
     ability: "Shadow Strike (Teleport + Dmg)",
@@ -138,10 +138,33 @@ const unitDefs = {
     dmg: 2,
     move: 2,
     cost: 3,
-    symbol: "☠️",
+    symbol: "🦅",
     ability: "Gain +1 DMG/HP/Max HP per ally death",
     rangePattern: "orthogonal",
     movePattern: "orthogonal"
+  },
+  Necromancer: {
+    hp: 5,
+    range: 2,
+    dmg: 2,
+    move: 2,
+    cost: 5,
+    symbol: "☠️",
+    ability: "Raise 3 skeletons in a 3x3 area",
+    rangePattern: "square",
+    movePattern: "orthogonal",
+    cooldowns: { "Raise Dead": 3 }
+  },
+  Skeleton: {
+    hp: 1,
+    range: 1,
+    dmg: 1,
+    move: 2,
+    symbol: "💀",
+    ability: "Summoned minion",
+    rangePattern: "orthogonal",
+    movePattern: "orthogonal",
+    hiddenFromShop: true
   },
 };
 
@@ -172,6 +195,8 @@ const makeUnit = (team, type, row, col) => ({
   movePattern: unitDefs[type].movePattern || "orthogonal",
   abilityCooldowns: {},
   runes: [],
+  exp: 0,
+  level: 1,
   apMax: 2,
   ap: 2,
   stunnedTurns: 0,
