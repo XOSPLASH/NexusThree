@@ -1,5 +1,13 @@
 // Cleric abilities
 (function() {
+  window.Entities = window.Entities || {};
+  window.Entities.unitDefs = window.Entities.unitDefs || {};
+  window.Entities.unitDefs.Cleric = {
+    hp: 6, range: 2, dmg: 2, move: 2, cost: 4,
+    symbol: "⚕️", ability: "Mass Heal adjacent allies",
+    rangePattern: "square", movePattern: "orthogonal",
+    cooldowns: { "Mass Heal": 2 }
+  };
   const makeMassHeal = () => ({
     name: "Mass Heal",
     desc: "Heal all adjacent allies for 2 HP.",

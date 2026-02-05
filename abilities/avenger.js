@@ -1,4 +1,11 @@
 (function() {
+  window.Entities = window.Entities || {};
+  window.Entities.unitDefs = window.Entities.unitDefs || {};
+  window.Entities.unitDefs.Avenger = {
+    hp: 7, range: 2, dmg: 2, move: 2, cost: 3,
+    symbol: "🦅", ability: "Gain +1 DMG/HP/Max HP per ally death",
+    rangePattern: "orthogonal", movePattern: "orthogonal"
+  };
   const makeVengeance = () => ({
     name: "Vengeance",
     desc: "Active: Gain +1 DMG, +1 HP, +1 Max HP per ally death.",

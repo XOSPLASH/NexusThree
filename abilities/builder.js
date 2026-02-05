@@ -1,5 +1,13 @@
 // Builder abilities
 (function() {
+  window.Entities = window.Entities || {};
+  window.Entities.unitDefs = window.Entities.unitDefs || {};
+  window.Entities.unitDefs.Builder = {
+    hp: 5, range: 2, dmg: 2, move: 2, cost: 2,
+    symbol: "🛠️", ability: "Construct or clear terrain",
+    rangePattern: "orthogonal", movePattern: "orthogonal",
+    cooldowns: { "Construct": 2 }
+  };
   const makeConstruct = () => ({
     name: "Construct",
     desc: "Build wall/bridge or clear wall (2x2 area)",

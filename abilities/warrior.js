@@ -1,5 +1,13 @@
 // Warrior abilities
 (function() {
+  window.Entities = window.Entities || {};
+  window.Entities.unitDefs = window.Entities.unitDefs || {};
+  window.Entities.unitDefs.Warrior = {
+    hp: 6, range: 1, dmg: 3, move: 2, cost: 2,
+    symbol: "⚔️", ability: "Tough melee",
+    rangePattern: "orthogonal", movePattern: "orthogonal",
+    cooldowns: { "Charge": 2 }
+  };
   const makeCharge = () => ({
     name: "Charge",
     desc: "Dash 2 tiles and strike an adjacent enemy.",

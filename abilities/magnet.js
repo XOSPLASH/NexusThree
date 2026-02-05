@@ -1,5 +1,13 @@
 // Magnet abilities
 (function() {
+  window.Entities = window.Entities || {};
+  window.Entities.unitDefs = window.Entities.unitDefs || {};
+  window.Entities.unitDefs.Magnet = {
+    hp: 8, range: 1, dmg: 4, move: 2, cost: 5,
+    symbol: "🧲", ability: "Pull units toward self",
+    rangePattern: "square", movePattern: "orthogonal",
+    cooldowns: { "Pull": 2 }
+  };
   const makePull = () => ({
     name: "Pull",
     desc: "Hook a target within orthogonal range and pull it 1 tile toward Magnet.",

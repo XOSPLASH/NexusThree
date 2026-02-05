@@ -1,5 +1,13 @@
 // Mage abilities
 (function() {
+  window.Entities = window.Entities || {};
+  window.Entities.unitDefs = window.Entities.unitDefs || {};
+  window.Entities.unitDefs.Mage = {
+    hp: 5, range: 2, dmg: 2, move: 1, cost: 2,
+    symbol: "🔮", ability: "Frostbolt (Damage + Stun)",
+    rangePattern: "square", movePattern: "orthogonal",
+    cooldowns: { "Frostbolt": 2 }
+  };
   const makeFrostbolt = () => ({
     name: "Frostbolt",
     desc: "Deal 2 damage and drain all AP (stun) from target enemy.",

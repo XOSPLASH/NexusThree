@@ -1,5 +1,13 @@
 // Paladin abilities
 (function() {
+  window.Entities = window.Entities || {};
+  window.Entities.unitDefs = window.Entities.unitDefs || {};
+  window.Entities.unitDefs.Paladin = {
+    hp: 8, range: 2, dmg: 4, move: 2, cost: 5,
+    symbol: "🛡️", ability: "Smite distant foe",
+    rangePattern: "orthogonal", movePattern: "orthogonal",
+    cooldowns: { "Smite": 2 }
+  };
   const makeSmite = () => ({
     name: "Smite",
     desc: "Strike an enemy within 2 tiles.",

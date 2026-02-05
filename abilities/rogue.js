@@ -1,5 +1,13 @@
 // Rogue abilities
 (function() {
+  window.Entities = window.Entities || {};
+  window.Entities.unitDefs = window.Entities.unitDefs || {};
+  window.Entities.unitDefs.Rogue = {
+    hp: 5, range: 1, dmg: 4, move: 2, cost: 3,
+    symbol: "🗡️", ability: "Shadow Strike (Teleport + Dmg)",
+    rangePattern: "orthogonal", movePattern: "orthogonal",
+    cooldowns: { "Shadow Strike": 2 }
+  };
   const makeShadowStrike = () => ({
     name: "Shadow Strike",
     desc: "Teleport adjacent to an enemy within range 4 and deal 3 damage.",

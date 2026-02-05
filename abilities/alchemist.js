@@ -1,5 +1,13 @@
 // Alchemist abilities
 (function() {
+  window.Entities = window.Entities || {};
+  window.Entities.unitDefs = window.Entities.unitDefs || {};
+  window.Entities.unitDefs.Alchemist = {
+    hp: 6, range: 3, dmg: 3, move: 2, cost: 5,
+    symbol: "⚗️", ability: "Catalyze a 3x3 area",
+    rangePattern: "thrower", movePattern: "square",
+    cooldowns: { "Catalyze": 2 }
+  };
   const makeCatalyze = () => ({
     name: "Catalyze",
     desc: "Select a 3x3 area to damage enemies (3x3 radius).",

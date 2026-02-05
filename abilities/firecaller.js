@@ -1,5 +1,13 @@
 // Firecaller abilities
 (function() {
+  window.Entities = window.Entities || {};
+  window.Entities.unitDefs = window.Entities.unitDefs || {};
+  window.Entities.unitDefs.Firecaller = {
+    hp: 6, range: 3, dmg: 2, move: 2, cost: 4,
+    symbol: "🔥", ability: "Ignite 3x3 area (burn)",
+    rangePattern: "square", movePattern: "orthogonal",
+    cooldowns: { "Ignite": 3 }
+  };
   const makeIgnite = () => ({
     name: "Ignite",
     desc: "Set a 3x3 area ablaze for 2 turns (2 dmg on start of turn).",
