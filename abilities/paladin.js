@@ -10,10 +10,10 @@
   };
   const makeSmite = () => ({
     name: "Smite",
-    desc: "Strike an enemy within 2 tiles.",
-    range: 2,
-    rangePattern: "radius",
-    damage: 4,
+    desc: "Strike an enemy",
+    range: 3,
+    rangePattern: "straight",
+    damage: 5,
     requiresTarget: true,
     computeTargets(game, unit) { return game.getSmiteTargets(unit); },
     perform(game, unit, r, c) {
