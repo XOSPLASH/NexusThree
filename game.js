@@ -53,7 +53,11 @@ class Game {
     this.board.forEachCell(cell => {
       cell.innerHTML = "";
       cell.style.borderColor = "";
-      cell.classList.remove("terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","hazard-fire");
+      cell.classList.remove(
+        "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","hazard-fire",
+        "unit-player","unit-ai","status-hex","token-player","token-ai",
+        "move-hl","attack-hl","ability-hl","attack-range-hl","ability-range-max"
+      );
     });
     // Terrain tokens
     for (let r = 0; r < Config.ROWS; r++) {
@@ -96,10 +100,17 @@ class Game {
     for (const ent of this.entities) {
       const cell = this.board.getCell(ent.row, ent.col);
       if (!cell) continue;
+    cell.classList.add(ent.team === Config.TEAM.PLAYER ? "unit-player" : "unit-ai");
       const span = document.createElement("span");
-      span.className = "token";
+    span.className = `token ${ent.team === Config.TEAM.PLAYER ? "token-player" : "token-ai"}`;
       span.textContent = ent.symbol;
       cell.appendChild(span);
+    if (ent.hexMarked) {
+      const badge = document.createElement("span");
+      badge.className = "status-badge hex-badge";
+      badge.textContent = "✳";
+      cell.appendChild(badge);
+    }
     }
   }
 
@@ -440,6 +451,10 @@ class Game {
         if ((ent.burnTurns || 0) > 0) {
           const liB = document.createElement("li"); liB.textContent = `Burn: ${ent.burnTurns} turn(s) remaining`;
           statusList.appendChild(liB); any = true;
+        }
+        if (ent.hexMarked) {
+          const liH = document.createElement("li"); liH.textContent = `Hexed: takes +1 damage`;
+          statusList.appendChild(liH); any = true;
         }
         if (!any) {
           const liN = document.createElement("li"); liN.textContent = "None";
@@ -1009,7 +1024,8 @@ class Game {
 
   applyDamage(target, dmg, source) {
     const before = target.hp;
-    target.hp = Math.max(0, target.hp - dmg);
+    const bonus = (target.hexMarked ? 1 : 0);
+    target.hp = Math.max(0, target.hp - (dmg + bonus));
     const cell = this.board.getCell(target.row, target.col);
     if (cell) {
       cell.classList.add("hit-anim");
