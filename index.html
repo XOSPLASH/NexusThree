@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover" />
     <title>NexusThree</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -31,6 +31,29 @@
     <script defer src="abilities/necromancer.js"></script>
     <script defer src="abilities/skeleton.js"></script>
     <script defer src="game.js"></script>
+    <script>
+      (function() {
+        function setViewportScale(scale) {
+          var meta = document.querySelector('meta[name="viewport"]');
+          if (!meta) return;
+          var s = Math.max(0.5, Math.min(1, scale || 1));
+          meta.setAttribute('content', 'width=device-width, initial-scale=' + s + ', minimum-scale=' + s + ', maximum-scale=1, viewport-fit=cover');
+        }
+        function recalcViewportScale() {
+          var isLandscape = window.matchMedia('(orientation: landscape)').matches;
+          if (!isLandscape) { setViewportScale(1); return; }
+          var main = document.querySelector('.app-main');
+          if (!main) { setViewportScale(1); return; }
+          var W = window.innerWidth || document.documentElement.clientWidth;
+          var layoutW = Math.ceil(main.scrollWidth);
+          var scale = W / layoutW;
+          setViewportScale(scale);
+        }
+        window.addEventListener('orientationchange', recalcViewportScale);
+        window.addEventListener('resize', recalcViewportScale);
+        document.addEventListener('DOMContentLoaded', recalcViewportScale);
+      })();
+    </script>
   </head>
   <body>
     <header class="app-header">

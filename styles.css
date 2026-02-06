@@ -403,6 +403,18 @@ body {
   .energy-chip { font-size: 11px; padding: 3px 6px; }
 }
 
+@media (orientation: landscape) and (min-width: 568px) and (max-width: 896px) {
+  :root {
+    --layout-gap: 10px;
+    --side-width: min(24vw, 260px);
+    --grid-size: min(100vh - 140px, calc(100vw - (var(--side-width) * 2 + var(--layout-gap) * 4)));
+  }
+  .app-main { padding: 8px var(--layout-gap); }
+  .grid { gap: 4px; padding: 8px; }
+  .cell { min-width: 44px; min-height: 44px; font-size: 16px; }
+  .btn { min-height: 44px; font-size: 16px; padding: 10px 16px; }
+  .energy-chip { font-size: 12px; padding: 4px 8px; }
+}
 @media (pointer: coarse) and (max-width: 560px) {
   .btn { padding: 12px 16px; font-size: 15px; }
   .cell { border-radius: 12px; }
