@@ -5,7 +5,7 @@
     hp: 5, range: 2, dmg: 1, move: 2, cost: 5,
     symbol: "🫧", ability: "Creates a 3x3 trap that prevents escape",
     rangePattern: "select", movePattern: "orthogonal",
-    cooldowns: { "Quagmire": 3 }
+    cooldowns: { "Quagmire": 5 }
   };
   const makeQuagmire = () => ({
     name: "Quagmire",

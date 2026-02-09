@@ -10,6 +10,7 @@ class Game {
     this.occupants = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
     this.terrain = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
     this.hazards = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
+    this.constructionSites = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
     this.entities = [];
     this.log = [];
     this.energy = { [Config.TEAM.PLAYER]: Config.ENERGY_START_PLAYER, [Config.TEAM.AI]: Config.ENERGY_START_AI };
@@ -95,6 +96,24 @@ class Game {
         if (!cell) continue;
         if (h.kind === "fire") cell.classList.add("hazard-fire");
         else if (h.kind === "sludge") cell.classList.add("hazard-sludge");
+      }
+    }
+    // Construction Sites
+    for (let r = 0; r < Config.ROWS; r++) {
+      for (let c = 0; c < Config.COLS; c++) {
+        const cs = this.constructionSites[r][c];
+        if (!cs) continue;
+        const cell = this.board.getCell(r, c);
+        if (!cell) continue;
+        cell.classList.add("construction-site");
+        const span = document.createElement("span");
+        span.className = "terrain-icon construction-icon";
+        span.textContent = "🏗️";
+        cell.appendChild(span);
+        const badge = document.createElement("span");
+        badge.className = "status-badge";
+        badge.textContent = `${cs.turns}T`;
+        cell.appendChild(badge);
       }
     }
     // Units and bases
@@ -308,7 +327,7 @@ class Game {
         }
         overlay.innerHTML = "";
         const panel = document.createElement("div");
-        panel.className = "panel";
+        panel.className = "panel shop-panel";
         const title = document.createElement("div");
         title.className = "panel-title";
         title.textContent = "Abilities";
@@ -318,6 +337,7 @@ class Game {
         const closeBtn = document.createElement("button");
         closeBtn.className = "btn btn-secondary";
         closeBtn.textContent = "Close";
+        closeBtn.style.marginTop = "16px";
         closeBtn.onclick = () => { overlay.classList.add("hidden"); };
         panel.appendChild(title);
         panel.appendChild(list);
@@ -1101,7 +1121,8 @@ class Game {
     this.playSfx && this.playSfx(options && options.dash ? "dash" : "move");
   }
 
-  tickHazards() {
+  tickTurnEffects() {
+    // Hazards
     for (let r = 0; r < Config.ROWS; r++) {
       for (let c = 0; c < Config.COLS; c++) {
         const hazard = this.hazards[r][c];
@@ -1122,13 +1143,52 @@ class Game {
         }
       }
     }
+    
+    // Construction Sites
+    for (let r = 0; r < Config.ROWS; r++) {
+      for (let c = 0; c < Config.COLS; c++) {
+        const cs = this.constructionSites[r][c];
+        if (cs) {
+          cs.turns--;
+          if (cs.turns <= 0) {
+            this.terrain[r][c] = cs.type;
+            this.constructionSites[r][c] = null;
+            this.logEvent({ type: "status", msg: "Construction complete!" });
+            this.playSfx && this.playSfx("click");
+          }
+        }
+      }
+    }
+
+    // Unit Effects (Beast Form)
+    for (const ent of this.entities) {
+      if (ent.kind === "unit" && ent.isBeast) {
+        ent.beastTurns--;
+        if (ent.beastTurns <= 0) {
+          ent.isBeast = false;
+          Object.assign(ent, ent.originalStats);
+          delete ent.originalStats;
+          this.logEvent({ type: "status", msg: `${ent.team === "P" ? "Player" : "AI"} Druid reverted to Human form.` });
+          const cell = this.board.getCell(ent.row, ent.col);
+          if (cell) {
+             cell.classList.add("transform-anim");
+             setTimeout(() => cell.classList.remove("transform-anim"), 1500);
+          }
+          if (this.playSfx) this.playSfx("transform");
+        }
+      }
+    }
   }
 
   applyDamage(target, dmg, source) {
     const before = target.hp;
     const bonus = (target.hexMarked ? 1 : 0);
     const abilityBonus = (source && source.kind === "unit" && this.abilityMode && this.abilityMode.unit === source) ? ((source.level || 1) - 1) : 0;
-    target.hp = Math.max(0, target.hp - (dmg + bonus + abilityBonus));
+    let effectiveDmg = dmg + bonus + abilityBonus;
+    if (target.kind === "unit" && target.isBeast) {
+        effectiveDmg = Math.floor(effectiveDmg * 0.8);
+    }
+    target.hp = Math.max(0, target.hp - effectiveDmg);
     const cell = this.board.getCell(target.row, target.col);
     if (cell) {
       cell.classList.add("hit-anim");
@@ -1820,11 +1880,58 @@ Game.prototype.generateTerrain = function() {
     return (sum / 6);
   };
 
+Game.prototype.createParticles = function(r, c, color) {
+  const cell = this.board.getCell(r, c);
+  if (!cell) return;
+  const count = 12;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("div");
+    p.className = "particle";
+    p.style.backgroundColor = color;
+    p.style.left = "50%";
+    p.style.top = "50%";
+    const angle = Math.random() * 2 * Math.PI;
+    const dist = 15 + Math.random() * 35;
+    const tx = Math.cos(angle) * dist + "px";
+    const ty = Math.sin(angle) * dist + "px";
+    p.style.setProperty("--tx", tx);
+    p.style.setProperty("--ty", ty);
+    cell.appendChild(p);
+    setTimeout(() => p.remove(), 800);
+  }
+};
+
 Game.prototype.playSfx = function(kind) {
   const ctx = this.audioCtx;
   if (!ctx) return;
   const o = ctx.createOscillator();
   const g = ctx.createGain();
+
+  if (kind === "transform") {
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(80, ctx.currentTime);
+    o.frequency.linearRampToValueAtTime(200, ctx.currentTime + 0.5);
+    o.frequency.linearRampToValueAtTime(60, ctx.currentTime + 1.2);
+    g.gain.setValueAtTime(0.1, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.2);
+    o.connect(g).connect(ctx.destination);
+    o.start();
+    o.stop(ctx.currentTime + 1.3);
+    return;
+  }
+  
+  if (kind === "construct") {
+    o.type = "square";
+    o.frequency.setValueAtTime(150, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.15);
+    g.gain.setValueAtTime(0.05, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
+    o.connect(g).connect(ctx.destination);
+    o.start();
+    o.stop(ctx.currentTime + 0.2);
+    return;
+  }
+
   o.type = "sine";
   o.frequency.value =
     kind === "hit" ? 320 :

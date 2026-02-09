@@ -6,7 +6,7 @@
     hp: 6, range: 3, dmg: 2, move: 2, cost: 4,
     symbol: "🔥", ability: "Ignite 3x3 area (burn)",
     rangePattern: "square", movePattern: "orthogonal",
-    cooldowns: { "Ignite": 3 }
+    cooldowns: { "Ignite": 5 }
   };
   const makeIgnite = () => ({
     name: "Ignite",

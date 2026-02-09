@@ -6,7 +6,7 @@
     hp: 5, range: 2, dmg: 2, move: 1, cost: 2,
     symbol: "🔮", ability: "Frostbolt (Damage + Stun)",
     rangePattern: "square", movePattern: "orthogonal",
-    cooldowns: { "Frostbolt": 2 }
+    cooldowns: { "Frostbolt": 4 }
   };
   const makeFrostbolt = () => ({
     name: "Frostbolt",

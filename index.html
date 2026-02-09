@@ -32,6 +32,7 @@
     <script defer src="abilities/skeleton.js"></script>
     <script defer src="abilities/hex.js"></script>
     <script defer src="abilities/sludge.js"></script>
+    <script defer src="abilities/druid.js"></script>
     <script defer src="game.js"></script>
     <script>
       (function() {
@@ -69,7 +70,7 @@
           <div class="panel-title">Unit Details</div>
           <div class="unit-header">
             <div id="unit-icon" class="unit-icon">—</div>
-            <div>
+            <div class="unit-info">
               <div id="unit-name" class="unit-name">None selected</div>
               <div id="unit-desc" class="unit-desc">Select a unit to view details.</div>
             </div>
@@ -101,7 +102,6 @@
       <aside class="side right">
         <div id="buy-panel" class="panel">
           <div class="panel-title">Unit Shop</div>
-          <div class="panel-subtitle">Select a unit to place adjacent to your base</div>
           <div id="buy-controls"></div>
           <button id="buy-cancel" class="btn btn-secondary" style="display:none">Cancel Placement</button>
         </div>

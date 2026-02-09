@@ -6,7 +6,7 @@
     hp: 8, range: 2, dmg: 4, move: 2, cost: 5,
     symbol: "🛡️", ability: "Smite distant foe",
     rangePattern: "orthogonal", movePattern: "orthogonal",
-    cooldowns: { "Smite": 2 }
+    cooldowns: { "Smite": 3 }
   };
   const makeSmite = () => ({
     name: "Smite",

@@ -6,7 +6,7 @@
     hp: 7, range: 2, dmg: 3, move: 3, cost: 3,
     symbol: "🪓", ability: "Whirlwind attack",
     rangePattern: "orthogonal", movePattern: "orthogonal",
-    cooldowns: { "Whirlwind": 2 }
+    cooldowns: { "Whirlwind": 4 }
   };
   const makeWhirlwind = () => ({
     name: "Whirlwind",

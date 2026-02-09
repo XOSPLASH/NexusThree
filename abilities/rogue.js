@@ -6,7 +6,7 @@
     hp: 5, range: 1, dmg: 4, move: 2, cost: 3,
     symbol: "🗡️", ability: "Shadow Strike (Teleport + Dmg)",
     rangePattern: "orthogonal", movePattern: "orthogonal",
-    cooldowns: { "Shadow Strike": 2 }
+    cooldowns: { "Shadow Strike": 3 }
   };
   const makeShadowStrike = () => ({
     name: "Shadow Strike",

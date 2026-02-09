@@ -5,7 +5,7 @@
     hp: 5, range: 3, dmg: 2, move: 2, cost: 4,
     symbol: "🧤", ability: "Marks enemies; marked take +1 damage",
     rangePattern: "orthogonal", movePattern: "orthogonal",
-    cooldowns: { "Hex": 2 }
+    cooldowns: { "Hex": 3 }
   };
   const makeHex = () => ({
     name: "Hex",

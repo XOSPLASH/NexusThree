@@ -6,7 +6,7 @@
     hp: 6, range: 3, dmg: 3, move: 2, cost: 5,
     symbol: "⚗️", ability: "Catalyze a 3x3 area",
     rangePattern: "thrower", movePattern: "square",
-    cooldowns: { "Catalyze": 2 }
+    cooldowns: { "Catalyze": 5 }
   };
   const makeCatalyze = () => ({
     name: "Catalyze",

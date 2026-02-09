@@ -6,7 +6,7 @@
     hp: 6, range: 2, dmg: 2, move: 2, cost: 4,
     symbol: "⚕️", ability: "Mass Heal adjacent allies",
     rangePattern: "square", movePattern: "orthogonal",
-    cooldowns: { "Mass Heal": 2 }
+    cooldowns: { "Mass Heal": 4 }
   };
   const makeMassHeal = () => ({
     name: "Mass Heal",
