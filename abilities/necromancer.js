@@ -3,7 +3,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Necromancer = {
-    hp: 5, range: 2, dmg: 2, move: 2, cost: 5,
+    hp: 5, range: 2, dmg: 2, move: 2, cost: 4,
     symbol: "☠️", ability: "Raise 3 skeletons in a 3x3 area",
     rangePattern: "square", movePattern: "orthogonal",
     cooldowns: { "Raise Dead": 3 }

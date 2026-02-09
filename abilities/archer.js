@@ -3,7 +3,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Archer = {
-    hp: 6, range: 3, dmg: 3, move: 1, cost: 4,
+    hp: 6, range: 3, dmg: 3, move: 1, cost: 3,
     symbol: "🏹", ability: "Long range",
     rangePattern: "straight", movePattern: "orthogonal",
     cooldowns: { "Snipe": 2 }

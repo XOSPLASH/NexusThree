@@ -220,6 +220,16 @@ body {
   box-shadow: inset 0 0 16px rgba(185, 19, 44, 0.45);
   animation: flame-flicker 1.6s ease-in-out infinite;
 }
+.cell.hazard-sludge {
+  background: radial-gradient(120px circle at 50% 50%, #2e1a47 0%, #1a0f2b 40%, #120a1f 70%, #0a0512 100%);
+  box-shadow: inset 0 0 16px rgba(139, 92, 246, 0.35);
+  animation: sludge-goo 3s ease-in-out infinite;
+}
+@keyframes sludge-goo {
+  0% { filter: contrast(1.1) brightness(1); }
+  50% { filter: contrast(1.3) brightness(1.1); transform: scale(1.02); }
+  100% { filter: contrast(1.1) brightness(1); }
+}
 .cell.terrain-water {
   background: radial-gradient(120px circle at 50% 50%, #0b1c2b 0%, #133b5c 40%, #1c597d 70%, #0a1a28 100%);
   box-shadow: inset 0 0 16px rgba(19, 59, 92, 0.45);
@@ -291,6 +301,16 @@ body {
   color: #0b0e1a;
   border: 1px solid #5b21b6;
   filter: drop-shadow(0 0 2px rgba(168,85,247,0.6));
+}
+.stuck-badge {
+  background: rgba(234, 179, 8, 0.85);
+  color: #0b0e1a;
+  border: 1px solid #a16207;
+  filter: drop-shadow(0 0 2px rgba(234, 179, 8, 0.6));
+}
+.cell.status-stuck {
+  box-shadow: inset 0 0 0 2px rgba(234, 179, 8, 0.35);
+  border-color: #a16207;
 }
 .cell.freeze-anim {
   box-shadow: 0 0 0 2px rgba(147,197,253,0.6), inset 0 0 14px rgba(59,130,246,0.4);
@@ -664,37 +684,14 @@ body {
   flex-direction: column;
   gap: 12px;
 }
-.rune-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.rune-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #0d1124;
-  border: 1px solid #1f2442;
-  border-radius: 8px;
-  padding: 10px;
-  gap: 10px;
-}
+.rune-list { display: grid; grid-template-columns: 1fr; gap: 10px; }
+.rune-item { display: flex; align-items: center; justify-content: space-between; background: #0d1124; border: 1px solid #1f2442; border-radius: 10px; padding: 12px; gap: 12px; }
 .rune-info {
   flex: 1;
 }
-.rune-name {
-  font-weight: 600;
-  font-size: 14px;
-  color: #e2e8f0;
-}
-.rune-desc {
-  font-size: 11px;
-  color: #94a3b8;
-}
-.btn-sm {
-  padding: 4px 8px;
-  font-size: 12px;
-}
+.rune-name { font-weight: 600; font-size: 15px; color: #e2e8f0; }
+.rune-desc { font-size: 12px; color: #94a3b8; }
+.btn-sm { padding: 6px 10px; font-size: 13px; border-radius: 6px; }
 #ability-buttons-row {
   display: flex;
   gap: 8px;

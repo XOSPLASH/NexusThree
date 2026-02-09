@@ -54,7 +54,7 @@ class Game {
       cell.innerHTML = "";
       cell.style.borderColor = "";
       cell.classList.remove(
-        "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","hazard-fire",
+        "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","hazard-fire","hazard-sludge",
         "unit-player","unit-ai","status-hex","token-player","token-ai",
         "move-hl","attack-hl","ability-hl","attack-range-hl","ability-range-max"
       );
@@ -94,6 +94,7 @@ class Game {
         const cell = this.board.getCell(r, c);
         if (!cell) continue;
         if (h.kind === "fire") cell.classList.add("hazard-fire");
+        else if (h.kind === "sludge") cell.classList.add("hazard-sludge");
       }
     }
     // Units and bases
@@ -110,6 +111,14 @@ class Game {
       badge.className = "status-badge hex-badge";
       badge.textContent = "✳";
       cell.appendChild(badge);
+      cell.classList.add("status-hex");
+    }
+    if (ent.stuck) {
+      const badge = document.createElement("span");
+      badge.className = "status-badge stuck-badge";
+      badge.textContent = "◎";
+      cell.appendChild(badge);
+      cell.classList.add("status-stuck");
     }
     }
   }
@@ -243,11 +252,15 @@ class Game {
           : ent.terrain === "nexus" ? `Nexus (${this.nexusOwners[ent.row][ent.col] === Config.TEAM.PLAYER ? "Player" : (this.nexusOwners[ent.row][ent.col] === Config.TEAM.AI ? "AI" : "Neutral")})`
           : "Plain";
         const hz = this.hazards[ent.row][ent.col];
-        const hazardName = hz && hz.kind === "fire" ? `Fire (${hz.turns} turn(s))` : "None";
-        const stats = [
-          ["Terrain", terrName],
-          ["Hazard", hazardName],
-        ];
+      let hazardName = "None";
+      if (hz) {
+        if (hz.kind === "fire") hazardName = `Fire (${hz.turns} turn(s))`;
+        else if (hz.kind === "sludge") hazardName = `Sludge (${hz.turns} turn(s))`;
+      }
+      const stats = [
+        ["Terrain", terrName],
+        ["Hazard", hazardName],
+      ];
       for (const [k, v] of stats) {
         const li = document.createElement("li"); li.textContent = `${k}: ${v}`; statsEl.appendChild(li);
       }
@@ -271,6 +284,17 @@ class Game {
     const def = Entities.unitDefs[ent.type];
     iconEl.textContent = ent.symbol;
     nameEl.textContent = `${ent.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${ent.type}`;
+    if (ent.stuck) {
+      const stuckBadge = document.createElement("span");
+      stuckBadge.className = "status-badge stuck-badge";
+      const hazard = this.hazards[ent.row][ent.col];
+      if (hazard && hazard.kind === "sludge") {
+        stuckBadge.textContent = `Stuck (${hazard.turns}T)`;
+      } else {
+        stuckBadge.textContent = "Stuck";
+      }
+      nameEl.appendChild(stuckBadge);
+    }
     descEl.textContent = def.ability;
     if (ent.kind === "unit") {
       viewAbBtn.style.display = "inline-block";
@@ -400,7 +424,8 @@ class Game {
         const rng = (a.name === "Catalyze" || a.name === "Construct") ? 1 : ((typeof a.range === "number" && a.range > 0) ? a.range : ent.range);
         const pattern = (a.rangePattern || "radius");
         if (typeof a.damage === "number" && a.damage > 0) {
-          const liD = document.createElement("li"); liD.textContent = `Damage: ${a.damage}`;
+          const eff = a.damage + Math.max(0, (ent.level || 1) - 1);
+          const liD = document.createElement("li"); liD.textContent = `Damage: ${eff}`;
           inner.appendChild(liD);
         }
         if (typeof a.heal === "number" && a.heal > 0) {
@@ -428,6 +453,10 @@ class Game {
           inner.appendChild(liV);
         }
         const liC = document.createElement("li"); liC.textContent = `Cooldown: ${cd} (base ${baseCd})`;
+        if (typeof a.duration === "number" && a.duration > 0) {
+          const liDur = document.createElement("li"); liDur.textContent = `Duration: ${a.duration} turn(s)`;
+          inner.appendChild(liDur);
+        }
         inner.appendChild(liR); inner.appendChild(liP); inner.appendChild(liC);
         li.appendChild(title);
         li.appendChild(desc);
@@ -436,34 +465,42 @@ class Game {
       }
 
       if (ent.kind === "unit") {
-        const statusPanel = document.createElement("div");
-        statusPanel.className = "ability-subpanel";
-        const statusTitle = document.createElement("div");
-        statusTitle.className = "unit-name";
-        statusTitle.textContent = "Status Effects";
-        const statusList = document.createElement("ul");
-        statusList.className = "list";
-        let any = false;
-        if ((ent.stunnedTurns || 0) > 0) {
-          const liS = document.createElement("li"); liS.textContent = `Stunned: ${ent.stunnedTurns} turn(s) remaining`;
-          statusList.appendChild(liS); any = true;
-        }
-        if ((ent.burnTurns || 0) > 0) {
-          const liB = document.createElement("li"); liB.textContent = `Burn: ${ent.burnTurns} turn(s) remaining`;
-          statusList.appendChild(liB); any = true;
-        }
-        if (ent.hexMarked) {
-          const liH = document.createElement("li"); liH.textContent = `Hexed: takes +1 damage`;
-          statusList.appendChild(liH); any = true;
-        }
-        if (!any) {
-          const liN = document.createElement("li"); liN.textContent = "None";
-          statusList.appendChild(liN);
-        }
-        statusPanel.appendChild(statusTitle);
-        statusPanel.appendChild(statusList);
-        abilEl.appendChild(statusPanel);
+      const statusPanel = document.createElement("div");
+      statusPanel.className = "ability-subpanel";
+      const statusTitle = document.createElement("div");
+      statusTitle.className = "unit-name";
+      statusTitle.textContent = "Status Effects";
+      const statusList = document.createElement("ul");
+      statusList.className = "list";
+      let any = false;
+      if ((ent.stunnedTurns || 0) > 0) {
+        const liS = document.createElement("li"); liS.textContent = `Stunned: ${ent.stunnedTurns} turn(s) remaining`;
+        statusList.appendChild(liS); any = true;
       }
+      if ((ent.burnTurns || 0) > 0) {
+        const liB = document.createElement("li"); liB.textContent = `Burn: ${ent.burnTurns} turn(s) remaining`;
+        statusList.appendChild(liB); any = true;
+      }
+      if (ent.hexMarked) {
+        const liH = document.createElement("li"); liH.textContent = `Hexed: takes +1 damage`;
+        statusList.appendChild(liH); any = true;
+      }
+      const hz = this.hazards[ent.row][ent.col];
+      if (hz && hz.kind === "sludge") {
+        const liSl = document.createElement("li"); liSl.textContent = `Trapped in Sludge: Cannot Move`;
+        statusList.appendChild(liSl);
+        const liDur = document.createElement("li"); liDur.textContent = `Duration: ${hz.turns} turn(s)`;
+        statusList.appendChild(liDur);
+        any = true;
+      }
+      if (!any) {
+        const liN = document.createElement("li"); liN.textContent = "None";
+        statusList.appendChild(liN);
+      }
+      statusPanel.appendChild(statusTitle);
+      statusPanel.appendChild(statusList);
+      abilEl.appendChild(statusPanel);
+    }
 
       
 
@@ -664,6 +701,8 @@ class Game {
   }
 
   getReachableTiles(unit, maxSteps) {
+    const hSrc = this.hazards[unit.row][unit.col];
+    if (hSrc && hSrc.kind === "sludge") return [];
     const res = [];
     const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
     for (const [dr, dc] of dirs) {
@@ -671,9 +710,27 @@ class Game {
         const r = unit.row + dr * s;
         const c = unit.col + dc * s;
         if (!this.inBounds(r, c)) break;
+        
+        // Diagonal restriction: check if moving between two blocked tiles
+        if (dr !== 0 && dc !== 0) {
+          const rSide = unit.row + dr * (s-1);
+          const cSide = unit.col + dc * (s-1);
+          // Check the two tiles that form the "gap" for this diagonal step
+          const corner1 = this.terrain[rSide + dr][cSide];
+          const corner2 = this.terrain[rSide][cSide + dc];
+          const isBlocked1 = corner1 === "wall" || corner1 === "water" || corner1 === "fortwall";
+          const isBlocked2 = corner2 === "wall" || corner2 === "water" || corner2 === "fortwall";
+          if (isBlocked1 && isBlocked2) break;
+        }
+
         const terr = this.terrain[r][c];
         if (terr === "wall" || terr === "water" || terr === "fortwall") break;
         if (this.occupants[r][c] != null) break;
+        
+        // Sludge entry restriction
+        const hDst = this.hazards[r][c];
+        if (hDst && hDst.kind === "sludge") break;
+
         res.push([r, c]);
       }
     }
@@ -963,6 +1020,8 @@ class Game {
   }
 
   moveUnit(unit, r, c, opt) {
+    const hSrc = this.hazards[unit.row][unit.col];
+    if (hSrc && hSrc.kind === "sludge") return;
     const src = this.board.getCell(unit.row, unit.col);
     const dst = this.board.getCell(r, c);
     this.occupants[unit.row][unit.col] = null;
@@ -991,6 +1050,11 @@ class Game {
 
   getMovePath(unit, tr, tc, maxSteps) {
     const sr = unit.row, sc = unit.col;
+
+    // Sludge exit restriction: if unit is in sludge, it cannot move out
+    const hSrc = this.hazards[sr][sc];
+    if (hSrc && hSrc.kind === "sludge") return null;
+
     const dr = tr - sr, dc = tc - sc;
     const a = Math.abs(dr), b = Math.abs(dc);
     // Must be aligned to one of 8 directions
@@ -1001,11 +1065,26 @@ class Game {
     const path = [];
     let r = sr, c = sc;
     for (let s = 1; s <= steps; s++) {
+      // Diagonal restriction: check if moving between two blocked tiles
+      if (stepR !== 0 && stepC !== 0) {
+        const rSide = r, cSide = c; // r,c are current pos before adding step
+        const corner1 = this.terrain[rSide + stepR][cSide];
+        const corner2 = this.terrain[rSide][cSide + stepC];
+        const isBlocked1 = corner1 === "wall" || corner1 === "water" || corner1 === "fortwall";
+        const isBlocked2 = corner2 === "wall" || corner2 === "water" || corner2 === "fortwall";
+        if (isBlocked1 && isBlocked2) return null;
+      }
+
       r += stepR; c += stepC;
       if (!this.inBounds(r, c)) return null;
       const terr = this.terrain[r][c];
       if (terr === "wall" || terr === "water" || terr === "fortwall") return null;
       if (this.occupants[r][c] != null && !(r === tr && c === tc)) return null;
+      
+      // Sludge entry restriction
+      const hDst = this.hazards[r][c];
+      if (hDst && hDst.kind === "sludge") return null;
+
       path.push([r, c]);
     }
     return path;
@@ -1022,14 +1101,41 @@ class Game {
     this.playSfx && this.playSfx(options && options.dash ? "dash" : "move");
   }
 
+  tickHazards() {
+    for (let r = 0; r < Config.ROWS; r++) {
+      for (let c = 0; c < Config.COLS; c++) {
+        const hazard = this.hazards[r][c];
+        if (hazard) {
+          hazard.turns--;
+          if (hazard.turns <= 0) {
+            this.hazards[r][c] = null;
+            const unit = this.occupants[r][c];
+            if (unit && unit.stuck) {
+              unit.stuck = false;
+            }
+          } else {
+            const unit = this.occupants[r][c];
+            if (unit && hazard.kind === "sludge") {
+              unit.stuck = true;
+            }
+          }
+        }
+      }
+    }
+  }
+
   applyDamage(target, dmg, source) {
     const before = target.hp;
     const bonus = (target.hexMarked ? 1 : 0);
-    target.hp = Math.max(0, target.hp - (dmg + bonus));
+    const abilityBonus = (source && source.kind === "unit" && this.abilityMode && this.abilityMode.unit === source) ? ((source.level || 1) - 1) : 0;
+    target.hp = Math.max(0, target.hp - (dmg + bonus + abilityBonus));
     const cell = this.board.getCell(target.row, target.col);
     if (cell) {
       cell.classList.add("hit-anim");
       setTimeout(() => cell.classList.remove("hit-anim"), 360);
+    }
+    if (target.kind === "base" && target.hp <= 0) {
+      this.checkWin();
     }
     this.playSfx && this.playSfx("hit");
     if (source && source.kind === "unit") {
@@ -1079,25 +1185,28 @@ class Game {
     this.abilityMode = null;
     this.buySelection = null;
     this.board.clearMarks();
-    const cancelBtn = document.getElementById("buy-cancel");
-    if (cancelBtn) cancelBtn.style.display = "none";
+
+    // Player Nexuses do damage as they finish their turn
+    this.applyNexusEffects(Config.TEAM.PLAYER);
+
     this.turn = Config.TEAM.AI;
     this.updateHUD();
     this.generateEnergy(Config.TEAM.AI);
-    this.applyNexusEffects(Config.TEAM.AI);
     this.resetAPForTeam(Config.TEAM.AI);
     this.applyHazardsForTeam(Config.TEAM.AI);
     this.tickCooldowns(Config.TEAM.AI);
     await this.runAI();
+    this.applyNexusEffects(Config.TEAM.AI);
     this.checkWin();
     this.turn = Config.TEAM.PLAYER;
     this.generateEnergy(Config.TEAM.PLAYER);
-    this.applyNexusEffects(Config.TEAM.PLAYER);
     this.resetAPForTeam(Config.TEAM.PLAYER);
     this.applyHazardsForTeam(Config.TEAM.PLAYER);
     this.tickCooldowns(Config.TEAM.PLAYER);
     this.abilityMode = null;
     this.updateHUD();
+    this.tickHazards();
+    this.renderEntities();
   }
 
   async runAI() {
@@ -1109,6 +1218,7 @@ class Game {
         if (this.energy[Config.TEAM.AI] >= cost) {
           if (this.spawnUnitNearBase(Config.TEAM.AI, t)) {
             this.spendEnergy(Config.TEAM.AI, cost);
+            this.logEvent({ type: "status", msg: `AI purchased ${t}` });
           }
         }
       }
@@ -1137,7 +1247,7 @@ class Game {
           const def = (window.Abilities && window.Abilities.Mage && window.Abilities.Mage[0]);
           if (def) {
             const targets = def.computeTargets(this, u);
-            // Prioritize units with AP > 0 (to stun them) or low HP
+            // Prioritize units with AP > 0 (to stun them), hexed targets, or low HP
             const scored = targets.map(([r, c]) => {
               const target = this.occupants[r][c];
               if (!target) return { r, c, score: 0 };
@@ -1145,6 +1255,7 @@ class Game {
               if (target.kind === "unit") {
                  if ((target.stunnedTurns || 0) > 0) score -= 4;
                  if (target.ap > 0) score += 5;
+                 if (target.hexMarked) score += 3;
                  score += (target.maxHp - target.hp); // Finish off weak
               }
               return { r, c, score };
@@ -1153,6 +1264,58 @@ class Game {
             if (scored.length > 0) {
               const best = scored[0];
               def.perform(this, u, best.r, best.c);
+              this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Frostbolt", target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
+              await this.delay(320);
+              continue;
+            }
+          }
+        }
+        if (u.type === "Hex" && ((u.abilityCooldowns["Hex"] || 0) === 0)) {
+          const def = (window.Abilities && window.Abilities.Hex && window.Abilities.Hex[0]);
+          if (def) {
+            const targets = def.computeTargets(this, u);
+            // Prioritize non-hexed units with high HP or proximity to base
+            const scored = targets.map(([r, c]) => {
+              const target = this.occupants[r][c];
+              if (!target || target.hexMarked) return { r, c, score: 0, target: null };
+              let score = 1;
+              if (target.kind === "unit") score += target.hp;
+              if (target.kind === "base") score += 10;
+              return { r, c, score, target };
+            }).sort((a, b) => b.score - a.score);
+            if (scored.length > 0 && scored[0].score > 0) {
+              const target = scored[0].target;
+              def.perform(this, u, scored[0].r, scored[0].c);
+              this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Hex", target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
+              await this.delay(320);
+              continue;
+            }
+          }
+        }
+        if (u.type === "Sludge" && ((u.abilityCooldowns["Quagmire"] || 0) === 0)) {
+          const def = (window.Abilities && window.Abilities.Sludge && window.Abilities.Sludge[0]);
+          if (def) {
+            const targets = def.computeTargets(this, u);
+            // Prioritize areas with most enemies and avoid hitting allies
+            const scored = targets.map(([r, c]) => {
+              let score = 0;
+              for (let dr = -1; dr <= 1; dr++) {
+                for (let dc = -1; dc <= 1; dc++) {
+                  const rr = r + dr, cc = c + dc;
+                  if (this.inBounds(rr, cc)) {
+                    const occ = this.occupants[rr][cc];
+                    if (occ && occ.kind === "unit") {
+                      if (occ.team !== u.team) score += 1;
+                      else if (occ.team === u.team) score -= 2; // Avoid hitting allies
+                    }
+                  }
+                }
+              }
+              return { r, c, score };
+            }).sort((a, b) => b.score - a.score);
+            if (scored.length > 0 && scored[0].score > 0) {
+              def.perform(this, u, scored[0].r, scored[0].c);
+              this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Quagmire", target: `(${scored[0].r}, ${scored[0].c})` });
               await this.delay(320);
               continue;
             }
@@ -1185,6 +1348,7 @@ class Game {
               }
               if (bestTarget && maxHits > 0) {
                 def.perform(this, u, bestTarget[0], bestTarget[1]);
+                this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Catalyze", target: `(${bestTarget[0]}, ${bestTarget[1]})` });
                 await this.delay(320);
                 continue;
               }
@@ -1210,6 +1374,7 @@ class Game {
               }
               if (bestTarget && maxEnemies > 0) {
                 def.perform(this, u, bestTarget[0], bestTarget[1]);
+                this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Ignite", target: `(${bestTarget[0]}, ${bestTarget[1]})` });
                 await this.delay(360);
                 continue;
               }
@@ -1237,6 +1402,7 @@ class Game {
               }
               if (best) {
                 def.perform(this, u, best[0], best[1]);
+                this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Pull", target: `(${best[0]}, ${best[1]})` });
                 await this.delay(360);
                 continue;
               }
@@ -1349,6 +1515,7 @@ class Game {
               const pick = candidates[0];
               if (pick) {
                 def.perform(this, u, pick.r, pick.c);
+                this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Construct", target: `(${pick.r}, ${pick.c})` });
                 await this.delay(320);
                 continue;
               }
@@ -1369,6 +1536,7 @@ class Game {
                const def = (window.Abilities && window.Abilities.Cleric && window.Abilities.Cleric[0]);
                if (def) {
                  def.perform(this, u);
+                 this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Mass Heal" });
                  await this.delay(320);
                  continue;
                }
@@ -1397,6 +1565,7 @@ class Game {
               if (scored.length > 0) {
                  const pick = scored[0];
                  def.perform(this, u, pick.r, pick.c);
+                 this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Shadow Strike", target: `(${pick.r}, ${pick.c})` });
                  await this.delay(320);
                  continue;
               }
@@ -1408,8 +1577,8 @@ class Game {
           .filter(Boolean);
         if (attackables.length > 0) {
           attackables.sort((a, b) => {
-            const sa = (a.kind === "base" ? 100 : 0) + (a.maxHp - a.hp);
-            const sb = (b.kind === "base" ? 100 : 0) + (b.maxHp - b.hp);
+            const sa = (a.kind === "base" ? 100 : 0) + (a.maxHp - a.hp) + (a.hexMarked ? 20 : 0);
+            const sb = (b.kind === "base" ? 100 : 0) + (b.maxHp - b.hp) + (b.hexMarked ? 20 : 0);
             return sb - sa;
           });
           const target = attackables[0];
@@ -1486,6 +1655,10 @@ class Game {
         const dist = this.distanceByPattern(p, nr - p.row, nc - p.col);
         if (dist <= p.range && this.hasLineOfSight(p.row, p.col, nr, nc)) exp++;
       }
+      // Sludge avoidance: avoid moving into sludge
+      const h = this.hazards[nr][nc];
+      if (h && h.kind === "sludge") exp += 10;
+
       const d = Math.abs(tr - nr) + Math.abs(tc - nc);
       return { cell: [nr, nc], exp, d };
     }).sort((a, b) => (a.exp - b.exp) || (a.d - b.d));
@@ -1849,7 +2022,7 @@ Game.prototype.awardExp = function(unit, amount, targetOpt) {
   const thresholds = { 1: 6, 2: 12 };
   while (unit.level < 3 && unit.exp >= thresholds[unit.level]) {
     unit.level += 1;
-    if (unit.level === 2) { unit.dmg += 1; }
+    if (unit.level === 2) { unit.dmg += 1; unit.levelDamageBonus = (unit.levelDamageBonus || 0) + 1; }
     if (unit.level === 3) { unit.maxHp += 1; unit.hp = Math.min(unit.maxHp, unit.hp + 1); }
     this.playSfx && this.playSfx("heal");
     this.logEvent({ type: "level", msg: `${unit.team === "P" ? "Player" : "AI"} ${unit.type} reached Level ${unit.level}` });

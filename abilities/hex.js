@@ -42,5 +42,6 @@
       game.updateUnitPanel(target);
     },
   });
+  window.Abilities = window.Abilities || {};
   window.Abilities.Hex = [makeHex()];
 })(); 
