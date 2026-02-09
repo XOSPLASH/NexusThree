@@ -99,6 +99,16 @@ body {
 .btn-secondary:hover { background: #4b5563; }
 .btn-secondary:active { transform: translateY(1px); }
 
+.log-time {
+  color: var(--muted);
+  width: 90px;
+  display: inline-block;
+  text-align: right;
+  margin-right: 8px;
+  font-family: monospace;
+  font-size: 11px;
+}
+
 .app-main {
   display: grid;
   grid-template-columns: var(--side-width) var(--grid-size) var(--side-width);

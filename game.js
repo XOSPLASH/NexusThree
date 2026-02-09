@@ -1210,6 +1210,7 @@ class Game {
   }
 
   async runAI() {
+    try {
     const aiBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.AI);
     if (aiBase && window.Entities && window.Entities.unitDefs) {
       const t = this.chooseAIPurchaseType();
@@ -1263,8 +1264,9 @@ class Game {
             
             if (scored.length > 0) {
               const best = scored[0];
+              const target = this.occupants[best.r][best.c];
               def.perform(this, u, best.r, best.c);
-              this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Frostbolt", target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
+              this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Frostbolt", target: target ? `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` : "Unknown" });
               await this.delay(320);
               continue;
             }
@@ -1630,6 +1632,10 @@ class Game {
       }
     }
     this.renderEntities();
+    } catch (err) {
+      console.error("AI Crash:", err);
+      this.logEvent({ type: "status", msg: "AI Error: " + err.message });
+    }
   }
 
   stepToward(sr, sc, tr, tc, unit) {
@@ -1714,7 +1720,7 @@ class Game {
 
   logEvent(event) {
     const ts = new Date().toLocaleTimeString();
-    this.log.unshift({ ts, ...event });
+    this.log.push({ ts, ...event });
     this.renderLog();
   }
 
@@ -1722,22 +1728,30 @@ class Game {
     const list = document.getElementById("log-list");
     if (!list) return;
     list.innerHTML = "";
-    for (const e of this.log.slice(0, 5)) {
+    for (const e of this.log) {
       const li = document.createElement("li");
+      const timeSpan = document.createElement("span");
+      timeSpan.className = "log-time";
+      timeSpan.textContent = `[${e.ts}] `;
+      li.appendChild(timeSpan);
+      
+      const msgSpan = document.createElement("span");
       if (e.type === "attack") {
         const also = e.alsoTargets && e.alsoTargets.length
           ? ` <span class="small">(also in range: ${e.alsoTargets.join(", ")})</span>`
           : "";
-        li.innerHTML = `${e.attacker} attacked ${e.target} for ${e.dmg} damage.${also}`;
+        msgSpan.innerHTML = `${e.attacker} attacked ${e.target} for ${e.dmg} damage.${also}`;
       } else if (e.type === "ability") {
-        li.innerHTML = `${e.caster} used ${e.ability}${e.target ? ` on ${e.target}` : ""}.`;
+        msgSpan.innerHTML = `${e.caster} used ${e.ability}${e.target ? ` on ${e.target}` : ""}.`;
       } else if (e.type === "death") {
-        li.innerHTML = `${e.killer} killed ${e.victim}.`;
+        msgSpan.innerHTML = `${e.killer} killed ${e.victim}.`;
       } else if (e.type === "status") {
-        li.innerHTML = `${e.msg}`;
+        msgSpan.innerHTML = `${e.msg}`;
       }
+      li.appendChild(msgSpan);
       list.appendChild(li);
     }
+    list.scrollTop = list.scrollHeight;
   }
 
   delay(ms) {
