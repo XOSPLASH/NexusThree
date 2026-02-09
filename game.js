@@ -1782,14 +1782,6 @@ Game.prototype.applyHazardsForTeam = function(team) {
       }
     }
   }
-  for (let r = 0; r < Config.ROWS; r++) {
-    for (let c = 0; c < Config.COLS; c++) {
-      const h = this.hazards[r][c];
-      if (!h) continue;
-      h.turns -= 1;
-      if (h.turns <= 0) this.hazards[r][c] = null;
-    }
-  }
   this.renderEntities();
 };
 window.addEventListener("DOMContentLoaded", () => {
