@@ -20,7 +20,9 @@ window.Multiplayer = (function() {
     UI.connectBtn = document.getElementById('connect-btn');
     UI.turnIndicator = document.getElementById('turn-indicator');
 
-    peer = new Peer();
+    // Simple short ID generator
+    const shortId = Math.floor(1000 + Math.random() * 9000).toString();
+    peer = new Peer(shortId);
 
     peer.on('open', (id) => {
       console.log('My peer ID is: ' + id);
@@ -54,6 +56,7 @@ window.Multiplayer = (function() {
         setTimeout(() => {
           sendPacket('SYNC_STATE', { 
             terrain: game.terrain,
+            nexusOwners: game.nexusOwners,
             basePositions: game.entities.filter(e => e.kind === 'base').map(e => ({ team: e.team, r: e.row, c: e.col }))
           });
         }, 500);
@@ -80,10 +83,12 @@ window.Multiplayer = (function() {
       UI.connectBtn.disabled = true;
       UI.joinInput.style.display = 'none';
       game.logEvent({ type: 'status', msg: 'PvP Connection Established!' });
+      updateTurnIndicator();
     });
 
     conn.on('data', (data) => {
       handlePacket(data);
+      updateTurnIndicator();
     });
 
     conn.on('close', () => {
@@ -91,6 +96,13 @@ window.Multiplayer = (function() {
       game.isMultiplayer = false;
       location.reload(); // Simplest way to reset
     });
+  }
+
+  function updateTurnIndicator() {
+    if (!UI.turnIndicator || !game) return;
+    const isMyTurn = game.turn === game.playerTeam;
+    UI.turnIndicator.textContent = isMyTurn ? "YOUR TURN" : "ENEMY TURN";
+    UI.turnIndicator.className = isMyTurn ? "turn turn-player" : "turn turn-enemy";
   }
 
   function sendPacket(type, payload) {

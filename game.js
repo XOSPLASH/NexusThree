@@ -82,7 +82,13 @@ class Game {
         if (!t) continue;
         const cell = this.board.getCell(r, c);
         if (!cell) continue;
-        if (t === "water") cell.classList.add("terrain-water");
+        if (t === "water") {
+          cell.classList.add("terrain-water");
+          const icon = document.createElement("span");
+          icon.className = "terrain-icon";
+          icon.textContent = "🌊";
+          cell.appendChild(icon);
+        }
         else if (t === "wall") cell.classList.add("terrain-wall");
         else if (t === "fortwall") cell.classList.add("terrain-fortwall");
         else if (t === "bridge") cell.classList.add("terrain-bridge");
@@ -91,13 +97,13 @@ class Game {
           const owner = this.nexusOwners[r][c];
           const icon = document.createElement("span");
           icon.className = `nexus-icon ${owner === Config.TEAM.PLAYER ? "nexus-player" : (owner === Config.TEAM.AI ? "nexus-ai" : "nexus-neutral")}`;
-          icon.textContent = "💠";
+          icon.textContent = "🔷"; // Larger blue diamond shape
           cell.appendChild(icon);
         }
         if (t === "wall" || t === "bridge" || t === "fortwall") {
           const terrainIcon = document.createElement("span");
           terrainIcon.className = "terrain-icon";
-          terrainIcon.textContent = t === "wall" ? "🧱" : (t === "bridge" ? "🌉" : "🪨");
+          terrainIcon.textContent = t === "wall" ? "🧱" : (t === "bridge" ? "🌉" : "🏯");
           cell.appendChild(terrainIcon);
         }
       }
@@ -135,7 +141,13 @@ class Game {
     for (const ent of this.entities) {
       const cell = this.board.getCell(ent.row, ent.col);
       if (!cell) continue;
-    cell.classList.add(ent.team === Config.TEAM.PLAYER ? "unit-player" : "unit-ai");
+      cell.classList.add(ent.team === Config.TEAM.PLAYER ? "unit-player" : "unit-ai");
+      
+      // Visual indicator if unit is on a nexus
+      if (this.terrain[ent.row][ent.col] === "nexus") {
+        cell.classList.add("unit-on-nexus");
+      }
+
       const span = document.createElement("span");
     span.className = `token ${ent.team === Config.TEAM.PLAYER ? "token-player" : "token-ai"}`;
       span.textContent = ent.symbol;
@@ -217,11 +229,15 @@ class Game {
       const p = this.energy[Config.TEAM.PLAYER];
       const a = this.energy[Config.TEAM.AI];
       
-      let turnName = this.turn === Config.TEAM.PLAYER ? "Player" : "AI";
       if (this.isMultiplayer) {
-        turnName = (this.turn === this.playerTeam) ? "YOU" : "Enemy";
+        const isMyTurn = this.turn === this.playerTeam;
+        turnEl.textContent = isMyTurn ? "YOUR TURN" : "ENEMY TURN";
+        turnEl.className = isMyTurn ? "turn turn-player" : "turn turn-enemy";
+      } else {
+        const isPlayerTurn = this.turn === Config.TEAM.PLAYER;
+        turnEl.textContent = isPlayerTurn ? "TURN: PLAYER" : "TURN: AI";
+        turnEl.className = isPlayerTurn ? "turn turn-player" : "turn turn-enemy";
       }
-      turnEl.textContent = `Turn: ${turnName}`;
       
       const pEl = document.getElementById("energy-player");
       const aEl = document.getElementById("energy-ai");
@@ -861,14 +877,16 @@ class Game {
                 window.Multiplayer.sendPacket('MOVE', { fromR, fromC, toR: r, toC: c, ap: u.ap });
               }
             }
-          } else if (attackTargets.includes(key) && this.occupants[r][c]) {
-            const target = this.occupants[r][c];
-            const fromR = u.row, fromC = u.col;
-            this.attack(u, target);
-            u.ap -= 1;
-            actionTaken = true;
-            if (this.isMultiplayer) {
-              window.Multiplayer.sendPacket('ATTACK', { fromR, fromC, toR: r, toC: c, ap: u.ap });
+          } else if (attackTargets.includes(key)) {
+            const target = this.occupants[r][c] || this.entities.find(e => e.kind === "base" && e.row === r && e.col === c);
+            if (target) {
+              const fromR = u.row, fromC = u.col;
+              this.attack(u, target);
+              u.ap -= 1;
+              actionTaken = true;
+              if (this.isMultiplayer) {
+                window.Multiplayer.sendPacket('ATTACK', { fromR, fromC, toR: r, toC: c, ap: u.ap });
+              }
             }
           }
           if (actionTaken) {
@@ -987,11 +1005,11 @@ class Game {
     const delay = (options && options.stepDelay) || 360;
     for (const [r, c] of path) {
       this.moveUnit(unit, r, c, { dash: !!(options && options.dash) });
+      this.playSfx && this.playSfx(options && options.dash ? "dash" : "move");
       this.renderEntities();
       this.board.clearMarks();
       await this.delay(delay);
     }
-    this.playSfx && this.playSfx(options && options.dash ? "dash" : "move");
   }
 
   tickTurnEffects() {
@@ -1125,8 +1143,9 @@ class Game {
       window.Multiplayer.sendPacket('END_TURN', {});
       this.endTurnPvP();
     } else {
-      // Player Nexuses do damage as they finish their turn
+      // 1. Both teams' Nexuses do damage as the current turn ends (every turn)
       this.applyNexusEffects(Config.TEAM.PLAYER);
+      this.applyNexusEffects(Config.TEAM.AI);
 
       this.turn = Config.TEAM.AI;
       this.updateHUD();
@@ -1135,7 +1154,11 @@ class Game {
       this.applyHazardsForTeam(Config.TEAM.AI);
       this.tickCooldowns(Config.TEAM.AI);
       await this.runAI();
+      
+      // 2. Both teams' Nexuses do damage after AI finishes its turn (every turn)
+      this.applyNexusEffects(Config.TEAM.PLAYER);
       this.applyNexusEffects(Config.TEAM.AI);
+
       this.checkWin();
       this.turn = Config.TEAM.PLAYER;
       this.generateEnergy(Config.TEAM.PLAYER);
@@ -1153,7 +1176,10 @@ class Game {
     const prevTurn = this.turn;
     const nextTurn = prevTurn === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER;
     
-    this.applyNexusEffects(prevTurn);
+    // Both teams' Nexuses do damage at the end of every PVP turn
+    this.applyNexusEffects(Config.TEAM.PLAYER);
+    this.applyNexusEffects(Config.TEAM.AI);
+
     this.turn = nextTurn;
     
     this.generateEnergy(nextTurn);
@@ -1627,6 +1653,11 @@ class Game {
       const h = this.hazards[nr][nc];
       if (h && h.kind === "sludge") exp += 10;
 
+      // Nexus attraction: AI units should prefer moving to/staying on Nexuses
+      if (this.terrain[nr][nc] === "nexus" && this.nexusOwners[nr][nc] !== unit.team) {
+        exp -= 15; // Huge bonus (negative exp = less danger/more attraction)
+      }
+
       const d = Math.abs(tr - nr) + Math.abs(tc - nc);
       return { cell: [nr, nc], exp, d };
     }).sort((a, b) => (a.exp - b.exp) || (a.d - b.d));
@@ -1647,11 +1678,13 @@ class Game {
     const pBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.PLAYER);
     const aBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.AI);
     if (pBase.hp <= 0) {
-      this.showOverlay("AI Wins! The player base was destroyed.");
-      this.logEvent({ type: "status", msg: "AI Wins!" });
+      const winner = this.isMultiplayer ? (this.playerTeam === Config.TEAM.AI ? "YOU WIN!" : "ENEMY WINS!") : "AI WINS!";
+      this.showOverlay(`${winner} The player base was destroyed.`);
+      this.logEvent({ type: "status", msg: winner });
     } else if (aBase.hp <= 0) {
-      this.showOverlay("Player Wins! The AI base was destroyed.");
-      this.logEvent({ type: "status", msg: "Player Wins!" });
+      const winner = this.isMultiplayer ? (this.playerTeam === Config.TEAM.PLAYER ? "YOU WIN!" : "ENEMY WINS!") : "PLAYER WINS!";
+      this.showOverlay(`${winner} The AI base was destroyed.`);
+      this.logEvent({ type: "status", msg: winner });
     }
   }
 
@@ -1968,7 +2001,14 @@ Game.prototype.applyNexusEffects = function(team) {
   const base = this.entities.find(e => e.kind === "base" && e.team === opp);
   if (base) {
     this.applyDamage(base, 2 * owned, null);
-    this.logEvent({ type: "nexus", msg: `${owned} nexus(es) dealt ${2*owned} to ${opp === "AI" ? "AI" : "Player"} base` });
+    let teamName = team === Config.TEAM.PLAYER ? "Player" : "AI";
+    let oppName = opp === Config.TEAM.PLAYER ? "Player" : "AI";
+    if (this.isMultiplayer) {
+      teamName = team === this.playerTeam ? "Your" : "Enemy";
+      oppName = opp === this.playerTeam ? "Your" : "Enemy";
+    }
+    this.logEvent({ type: "nexus", msg: `${teamName} nexus(es) dealt ${2*owned} to ${oppName} base` });
+    this.renderEntities(); // Refresh base health bars
   }
 };
 
@@ -2001,7 +2041,10 @@ Game.prototype.spawnUnitNearBase = function(team, type, forcedR, forcedC) {
         if (dr === 0 && dc === 0) continue;
         const rr = base.row + dr, cc = base.col + dc;
         if (!this.inBounds(rr, cc)) continue;
-        if (this.terrain[rr][cc]) continue;
+        
+        const t = this.terrain[rr][cc];
+        if (t === "water" || t === "wall" || t === "fortwall") continue;
+        
         if (this.occupants[rr][cc] != null) continue;
         res.push([rr, cc]);
       }
@@ -2021,6 +2064,7 @@ Game.prototype.spawnUnitNearBase = function(team, type, forcedR, forcedC) {
 
 Game.prototype.syncState = function(data) {
   this.terrain = data.terrain;
+  this.nexusOwners = data.nexusOwners || Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
   this.entities = [];
   this.occupants = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
   
@@ -2077,7 +2121,11 @@ Game.prototype.getBuyPositions = function(team) {
       if (dr === 0 && dc === 0) continue;
       const r = base.row + dr, c = base.col + dc;
       if (!this.inBounds(r, c)) continue;
-      if (this.terrain[r][c]) continue;
+      
+      const t = this.terrain[r][c];
+      // Only block placement on blocking terrain
+      if (t === "water" || t === "wall" || t === "fortwall") continue;
+      
       if (this.occupants[r][c] != null) continue;
       res.push([r, c]);
     }
