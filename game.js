@@ -7,6 +7,9 @@ class Game {
     this.abilityMode = null;
     this.buySelection = null;
     this.overlay = null;
+    this.runeTooltip = null;
+    this.runeTooltipCleanup = null;
+    this.runeTooltipHideTimer = null;
     this.occupants = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
     this.terrain = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
     this.hazards = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
@@ -65,6 +68,22 @@ class Game {
     grid.classList.toggle("board-flipped", this.isMultiplayer && this.playerTeam === Config.TEAM.AI);
   }
 
+  getDisplayEntitySymbol(ent) {
+    if (!ent) return "";
+    if (ent.kind === "base" && this.isMultiplayer) {
+      return this.isFriendlyTeam(ent.team) ? "🏰" : "⛩️";
+    }
+    return ent.symbol;
+  }
+
+  canActivateAbility(unit, def) {
+    if (!unit || !def || unit.kind !== "unit") return false;
+    if (!this.entities.includes(unit)) return false;
+    if ((unit.ap || 0) < 1) return false;
+    const cooldown = (unit.abilityCooldowns && unit.abilityCooldowns[def.name]) || 0;
+    return cooldown === 0;
+  }
+
   addEntity(ent) {
     if (ent && ent.kind === "unit" && ent.type === "Skeleton") {
       if (!(ent.summonedBy === "Necromancer")) {
@@ -85,7 +104,7 @@ class Game {
         "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","terrain-nexus-player","terrain-nexus-ai",
         "hazard-fire","hazard-sludge","construction-site",
         "unit-player","unit-ai","status-hex","status-stuck","token-player","token-ai",
-        "move-hl","attack-hl","heal-hl","ability-hl","attack-range-hl","ability-range-max","selected-empty","buy-hl"
+        "move-hl","attack-hl","heal-hl","ability-hl","attack-range-hl","ability-range-max","selected-empty","selected-target-hl","buy-hl"
       );
     });
     // Terrain tokens
@@ -159,7 +178,7 @@ class Game {
 
       const span = document.createElement("span");
       span.className = `token ${this.isFriendlyTeam(ent.team) ? "token-player" : "token-ai"}`;
-      span.textContent = ent.symbol;
+      span.textContent = this.getDisplayEntitySymbol(ent);
       cell.appendChild(span);
       if (ent.hexMarked) {
         const badge = document.createElement("span");
@@ -201,17 +220,21 @@ class Game {
       this.board.markSelected(u.row, u.col);
       const maxTargets = (this.abilityMode && this.abilityMode.targets) || [];
       if (maxTargets.length) this.board.markPositions(maxTargets, "ability-range-max");
-      const area = [];
-      const size = (this.abilityMode.def.name === "Construct") ? 2 : 3;
-      const half = Math.floor(size / 2);
-      for (let dr = -half; dr <= (size - half - 1); dr++) {
-        for (let dc = -half; dc <= (size - half - 1); dc++) {
-          const rr = r + dr, cc = c + dc;
-          if (!this.inBounds(rr, cc)) continue;
-          area.push([rr, cc]);
+      const selectedTiles = (this.abilityMode && this.abilityMode.selectedTiles) || [];
+      if (selectedTiles.length) this.board.markPositions(selectedTiles, "selected-target-hl");
+      if (maxTargets.some(([tr, tc]) => tr === r && tc === c)) {
+        const area = [];
+        const size = Math.max(1, Number(this.abilityMode.def.previewSize) || ((this.abilityMode.def.name === "Construct") ? 1 : 3));
+        const half = Math.floor(size / 2);
+        for (let dr = -half; dr <= (size - half - 1); dr++) {
+          for (let dc = -half; dc <= (size - half - 1); dc++) {
+            const rr = r + dr, cc = c + dc;
+            if (!this.inBounds(rr, cc)) continue;
+            area.push([rr, cc]);
+          }
         }
+        this.board.markPositions(area, "ability-hl");
       }
-      this.board.markPositions(area, "ability-hl");
     });
     document.body.addEventListener("click", (e) => {
       if (!e.target.closest(".cell") &&
@@ -267,6 +290,114 @@ class Game {
     }
   }
 
+  getHazardDescriptor(hazard) {
+    if (!hazard) return null;
+    if (hazard.kind === "fire") {
+      return {
+        icon: "🔥",
+        name: "Blazing Ground",
+        desc: "A burning hazard that scorches units at the start of their turn.",
+        notes: [["Hazard", "Fire"], ["Duration", `${hazard.turns} turn${hazard.turns === 1 ? "" : "s"}`]],
+        subtype: "fire"
+      };
+    }
+    if (hazard.kind === "sludge") {
+      return {
+        icon: "🫧",
+        name: "Quagmire",
+        desc: "A sludge trap that locks units in place until it fades.",
+        notes: [["Hazard", "Sludge Trap"], ["Duration", `${hazard.turns} turn${hazard.turns === 1 ? "" : "s"}`], ["Effect", "Cannot move out"]],
+        subtype: "sludge"
+      };
+    }
+    return null;
+  }
+
+  getTileDescriptor(row, col) {
+    const terrain = this.terrain[row][col];
+    const hazard = this.hazards[row][col];
+    const terrainInfo = {
+      water: { icon: "🌊", name: "Water", desc: "Water blocks most units. Builders can turn it into a bridge.", notes: [["Movement", "Blocked"], ["Builder", "Can bridge"]], subtype: "water" },
+      wall: { icon: "🧱", name: "Wall", desc: "A basic wall tile that blocks movement and line paths.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "wall" },
+      fortwall: { icon: "🏯", name: "Fortwall", desc: "A reinforced wall built by the Builder. It blocks movement.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "fortwall" },
+      bridge: { icon: "🌉", name: "Bridge", desc: "A passable bridge over water created by construction.", notes: [["Movement", "Passable"], ["Builder", "Can revert"]], subtype: "bridge" },
+      nexus: { icon: "💠", name: "Nexus", desc: "Standing here captures the nexus for your team and helps units level up.", notes: [["Effect", "Capture point"], ["Bonus", "Grants XP"]], subtype: "nexus" },
+      grass: { icon: "🟩", name: "Open Ground", desc: "Open ground with no special effect.", notes: [["Movement", "Passable"], ["Effect", "None"]], subtype: "grass" }
+    };
+    const base = terrainInfo[terrain || "grass"] || terrainInfo.grass;
+    const hazardInfo = this.getHazardDescriptor(hazard);
+    if (!hazardInfo) return base;
+    return {
+      icon: hazardInfo.icon,
+      name: hazardInfo.name,
+      desc: hazardInfo.desc,
+      notes: [...hazardInfo.notes, ["Ground", base.name]],
+      subtype: hazardInfo.subtype
+    };
+  }
+
+  formatPatternLabel(pattern) {
+    return String(pattern || "").replace(/_/g, " ");
+  }
+
+  hideRuneDetails() {
+    if (this.runeTooltipHideTimer) {
+      clearTimeout(this.runeTooltipHideTimer);
+      this.runeTooltipHideTimer = null;
+    }
+    if (this.runeTooltipCleanup) {
+      document.removeEventListener("click", this.runeTooltipCleanup, true);
+      this.runeTooltipCleanup = null;
+    }
+    if (this.runeTooltip) {
+      this.runeTooltip.remove();
+      this.runeTooltip = null;
+    }
+  }
+
+  showRuneDetails(rune, anchorEl) {
+    if (!rune || !anchorEl) return;
+    this.hideRuneDetails();
+    const tip = document.createElement("div");
+    tip.className = "rune-tooltip";
+    tip.innerHTML = `
+      <div class="rune-tooltip-name">${rune.name}</div>
+      <div class="rune-tooltip-desc">${rune.desc}</div>
+    `;
+    document.body.appendChild(tip);
+    const rect = anchorEl.getBoundingClientRect();
+    const tipRect = tip.getBoundingClientRect();
+    const left = Math.min(window.innerWidth - tipRect.width - 12, Math.max(12, rect.left + rect.width / 2 - tipRect.width / 2));
+    const top = rect.top - tipRect.height - 10 >= 12
+      ? rect.top - tipRect.height - 10
+      : rect.bottom + 10;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+    const onDocClick = (e) => {
+      if (tip.contains(e.target) || anchorEl.contains(e.target)) return;
+      this.hideRuneDetails();
+    };
+    const scheduleHide = () => {
+      if (this.runeTooltipHideTimer) clearTimeout(this.runeTooltipHideTimer);
+      this.runeTooltipHideTimer = setTimeout(() => {
+        const hoveringTrigger = anchorEl.matches(":hover");
+        const hoveringTip = tip.matches(":hover");
+        if (!hoveringTrigger && !hoveringTip) this.hideRuneDetails();
+      }, 80);
+    };
+    tip.addEventListener("mouseenter", () => {
+      if (this.runeTooltipHideTimer) {
+        clearTimeout(this.runeTooltipHideTimer);
+        this.runeTooltipHideTimer = null;
+      }
+    });
+    tip.addEventListener("mouseleave", scheduleHide);
+    anchorEl.onmouseleave = scheduleHide;
+    this.runeTooltip = tip;
+    this.runeTooltipCleanup = onDocClick;
+    setTimeout(() => document.addEventListener("click", onDocClick, true), 0);
+  }
+
   updateUnitPanel(ent) {
     const iconEl = document.getElementById("unit-icon");
     const nameEl = document.getElementById("unit-name");
@@ -280,24 +411,35 @@ class Game {
     if (!iconEl || !nameEl || !descEl || !statsEl) return;
     statsEl.innerHTML = "";
     if (showAbBtn) showAbBtn.style.display = "none";
+    this.hideRuneDetails();
 
     if (unitPanel) {
-      const existingRunes = unitPanel.querySelectorAll(".rune-panel");
-      existingRunes.forEach(el => el.remove());
+      const existingDetails = unitPanel.querySelectorAll(".detail-dynamic");
+      existingDetails.forEach(el => el.remove());
       const existingTerr = unitPanel.querySelectorAll(".terr-row");
       existingTerr.forEach(el => el.remove());
-      const existingLevel = unitPanel.querySelectorAll(".leveling-panel");
-      existingLevel.forEach(el => el.remove());
     }
 
     if (!ent) {
       iconEl.textContent = "—";
       nameEl.textContent = "None selected";
       descEl.textContent = "Select a tile or unit to view details.";
+      this.hideRuneDetails();
       return;
     }
 
     if (ent.kind === "tile") {
+      const info = this.getTileDescriptor(ent.row, ent.col);
+      iconEl.innerHTML = `<span>${info.icon}</span>`;
+      nameEl.textContent = info.name;
+      descEl.textContent = info.desc;
+      const rows = [["Tile", `(${ent.row + 1}, ${ent.col + 1})`], ...info.notes];
+      for (const [k, v] of rows) {
+        const li = document.createElement("li");
+        li.textContent = `${k}: ${v}`;
+        statsEl.appendChild(li);
+      }
+      return;
       const terrIcon = ent.terrain === "water" ? "🌊" : ent.terrain === "wall" ? "🧱" : ent.terrain === "fortwall" ? "🏯" : ent.terrain === "bridge" ? "🌉" : ent.terrain === "nexus" ? "💠" : "🟩";
       iconEl.innerHTML = `<span>${terrIcon}</span>`;
       nameEl.textContent = ent.terrain.charAt(0).toUpperCase() + ent.terrain.slice(1);
@@ -306,7 +448,7 @@ class Game {
     }
 
     if (ent.kind === "base") {
-      iconEl.textContent = ent.symbol;
+      iconEl.textContent = this.getDisplayEntitySymbol(ent);
       const teamName = this.isMultiplayer ? (ent.team === this.playerTeam ? "Your" : "Enemy") : (ent.team === Config.TEAM.PLAYER ? "Player" : "AI");
       nameEl.textContent = `${teamName} Base`;
       descEl.textContent = ent.team === this.playerTeam ? "Your base. If its HP reaches 0, you lose." : "Enemy base. Destroy it to win!";
@@ -318,7 +460,7 @@ class Game {
     }
 
     const def = Entities.unitDefs[ent.type];
-    iconEl.textContent = ent.symbol;
+    iconEl.textContent = this.getDisplayEntitySymbol(ent);
     const teamName = this.isMultiplayer ? (ent.team === this.playerTeam ? "Your" : "Enemy") : (ent.team === Config.TEAM.PLAYER ? "Player" : "AI");
     nameEl.textContent = `${teamName} ${ent.type}`;
     descEl.textContent = def.ability;
@@ -329,6 +471,11 @@ class Game {
       const nextLevelXp = thresholds[currentLevel];
       const nextReward = currentLevel === 1 ? "+1 Damage" : currentLevel === 2 ? "+1 Max HP" : "Fully upgraded";
 
+      const levelingWrap = document.createElement("div");
+      levelingWrap.className = "details-section detail-dynamic";
+      const levelingLabel = document.createElement("div");
+      levelingLabel.className = "section-label";
+      levelingLabel.textContent = "Level";
       const levelingPanel = document.createElement("div");
       levelingPanel.className = "leveling-panel";
       levelingPanel.innerHTML = `
@@ -344,15 +491,61 @@ class Game {
         </div>
         <div class="leveling-progress">${currentLevel >= 3 ? "XP MAXED" : `XP ${ent.exp || 0}/${nextLevelXp}`}</div>
       `;
-      unitPanel.appendChild(levelingPanel);
+      levelingWrap.appendChild(levelingLabel);
+      levelingWrap.appendChild(levelingPanel);
 
-      // Runes
+      // Stats
+      const base = Entities.unitDefs[ent.type] || {};
+      const stats = [
+        ["HP", `${ent.hp}/${ent.maxHp}`, base.hp],
+        ["Damage", `${ent.dmg}`, base.dmg],
+        ["Range", `${ent.range}`, base.range, this.formatPatternLabel(ent.rangePattern || "square")],
+        ["Movement", `${ent.move}`, base.move, this.formatPatternLabel(ent.movePattern || "orthogonal")],
+        ["AP", `${ent.ap}/${ent.apMax}`],
+      ];
+      for (const [k, v, b, sub] of stats) {
+        const li = document.createElement("li");
+        if (k === "AP") {
+          const pips = Array.from({ length: ent.apMax }, (_, i) => `<span class="ap-pip${i < ent.ap ? '' : ' used'}"></span>`).join('');
+          li.className = "stat-card stat-card-ap";
+          li.innerHTML = `
+            <span class="stat-key">AP</span>
+            <span class="stat-value">${v} <span class="ap-pips">${pips}</span></span>
+          `;
+        } else {
+          const cur = k === "HP" ? ent.hp : (k === "Damage" ? ent.dmg : (k === "Range" ? ent.range : ent.move));
+          const delta = (typeof b === "number") ? (cur - b) : 0;
+          const subLabel = sub ? `<span class="muted-sub">${sub}</span>` : "";
+          li.className = `stat-card${sub ? " stat-card-pattern" : ""}`;
+          li.innerHTML = `
+            <span class="stat-key">${k}</span>
+            <span class="stat-value-wrap">
+              <span class="stat-value">${v}${delta > 0 ? ` (+${delta})` : ""}</span>
+              ${subLabel}
+            </span>
+          `;
+        }
+        statsEl.appendChild(li);
+      }
+      if (!this.entities.includes(ent)) {
+        const tileInfo = this.getTileDescriptor(ent.row, ent.col);
+        const tileRow = document.createElement("li");
+        tileRow.className = "stat-card stat-card-tile";
+        tileRow.innerHTML = `
+          <span class="stat-key">Tile</span>
+          <span class="stat-value-wrap">
+            <span class="stat-value">${tileInfo.name}</span>
+          </span>
+        `;
+        statsEl.appendChild(tileRow);
+      }
+      const runeWrap = document.createElement("div");
+      runeWrap.className = "details-section detail-dynamic";
+      const runeLabel = document.createElement("div");
+      runeLabel.className = "section-label";
+      runeLabel.textContent = "Runes";
       const runePanel = document.createElement("div");
       runePanel.className = "rune-panel";
-      const runeTitle = document.createElement("div");
-      runeTitle.className = "unit-name";
-      runeTitle.textContent = "Runes";
-      runePanel.appendChild(runeTitle);
       const slots = document.createElement("div");
       slots.className = "rune-slots";
       for (let i = 0; i < 3; i++) {
@@ -362,6 +555,9 @@ class Game {
           slot.className = "rune-slot filled";
           slot.textContent = rune.name[0];
           slot.title = `${rune.name}: ${rune.desc}`;
+          slot.onmouseenter = () => this.showRuneDetails(rune, slot);
+          slot.onfocus = () => this.showRuneDetails(rune, slot);
+          slot.onclick = (e) => { e.stopPropagation(); this.showRuneDetails(rune, slot); };
         } else {
           const unlockLevel = i + 1;
           const myTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
@@ -377,30 +573,10 @@ class Game {
         slots.appendChild(slot);
       }
       runePanel.appendChild(slots);
-      unitPanel.appendChild(runePanel);
-
-      // Stats
-      const base = Entities.unitDefs[ent.type] || {};
-      const stats = [
-        ["HP", `${ent.hp}/${ent.maxHp}`, base.hp],
-        ["Damage", `${ent.dmg}`, base.dmg],
-        ["Range", `${ent.range}`, base.range, (ent.rangePattern || "square")],
-        ["Move", `${ent.move}`, base.move, (ent.movePattern || "orthogonal")],
-        ["AP", `${ent.ap}/${ent.apMax}`],
-      ];
-      for (const [k, v, b, sub] of stats) {
-        const li = document.createElement("li");
-        if (k === "AP") {
-          const pips = Array.from({ length: ent.apMax }, (_, i) => `<span class="ap-pip${i < ent.ap ? '' : ' used'}"></span>`).join('');
-          li.innerHTML = `AP: ${v} <span class="ap-pips">${pips}</span>`;
-        } else {
-          const cur = k === "HP" ? ent.hp : (k === "Damage" ? ent.dmg : (k === "Range" ? ent.range : ent.move));
-          const delta = (typeof b === "number") ? (cur - b) : 0;
-          const subLabel = sub ? ` <span class="muted-sub">${sub}</span>` : "";
-          li.innerHTML = `${k}: ${v}${delta > 0 ? ` (+${delta})` : ""}${subLabel}`;
-        }
-        statsEl.appendChild(li);
-      }
+      runeWrap.appendChild(runeLabel);
+      runeWrap.appendChild(runePanel);
+      unitPanel.appendChild(levelingWrap);
+      unitPanel.appendChild(runeWrap);
 
       // Abilities Button
       const abilities = (window.Abilities && window.Abilities[ent.type]) || [];
@@ -433,7 +609,7 @@ class Game {
       
       const cd = (ent.abilityCooldowns && ent.abilityCooldowns[a.name]) || 0;
       const isMyTeam = this.isMultiplayer ? (ent.team === this.playerTeam) : (ent.team === Config.TEAM.PLAYER);
-      const canUse = isMyTeam && cd === 0 && ent.ap >= 1 && this.entities.includes(ent);
+      const canUse = isMyTeam && this.canActivateAbility(ent, a);
 
       li.innerHTML = `
         <div class="unit-name" style="display:flex; justify-content:space-between;">
@@ -445,17 +621,28 @@ class Game {
       `;
 
       if (canUse) {
-        li.onclick = () => {
+          li.onclick = () => {
+          if (!this.canActivateAbility(ent, a)) return;
           document.querySelectorAll("#abilities-list li").forEach(el => el.classList.remove("selected"));
           li.classList.add("selected");
           abilBtn.style.display = "block";
           abilBtn.onclick = () => {
+            if (!this.canActivateAbility(ent, a)) {
+              this.abilityMode = null;
+              this.board.clearMarks();
+              this.renderEntities();
+              this.updateHUD();
+              this.updateUnitPanel(ent);
+              abilOverlay.classList.add("hidden");
+              return;
+            }
             this.abilityMode = { unit: ent, def: a };
             if (a.requiresTarget) {
               this.showAbilityHints(ent, a);
             } else {
               const fromR = ent.row, fromC = ent.col;
               a.perform(this, ent);
+              this.abilityMode = null;
               if (this.isMultiplayer) {
                 window.Multiplayer.sendPacket('ABILITY', { fromR, fromC, abilityName: a.name, ap: ent.ap });
               }
@@ -475,6 +662,7 @@ class Game {
   }
 
   openRuneShop(unit) {
+    this.hideRuneDetails();
     let shop = document.getElementById("rune-shop");
     if (!shop) {
       shop = document.createElement("div");
@@ -507,13 +695,14 @@ class Game {
       `;
     const btn = item.querySelector("button");
     const hasRune = unit.runes.some(r => r.id === def.id);
-    if (this.energy[myTeam] < def.cost || hasRune || unit.runes.length >= 3) {
+    if (this.energy[myTeam] < def.cost || hasRune || unit.runes.length >= Math.min(3, unit.level || 1)) {
       btn.disabled = true;
       btn.textContent = hasRune ? "Owned" : `Buy (${def.cost})`;
     }
       btn.onclick = () => {
-        this.buyRune(unit, def.id);
-        shop.classList.add("hidden");
+        if (this.buyRune(unit, def.id)) {
+          shop.classList.add("hidden");
+        }
       };
       list.appendChild(item);
     });
@@ -732,7 +921,7 @@ class Game {
         toMark = area;
       }
       const targets = def && typeof def.computeTargets === "function" ? def.computeTargets(this, unit) : [];
-      this.board.markPositions(targets, "ability-hl");
+      this.board.markPositions(targets, def.multiSelect ? "ability-range-max" : "ability-hl");
       toMark = targets;
     }
     if (!this.abilityMode) this.abilityMode = { unit, def };
@@ -832,21 +1021,50 @@ class Game {
     if (this.abilityMode && this.abilityMode.unit && (this.isMultiplayer ? this.abilityMode.unit.team === this.playerTeam : this.abilityMode.unit.team === Config.TEAM.PLAYER)) {
       const u = this.abilityMode.unit;
       const def = this.abilityMode.def;
+      if (!this.canActivateAbility(u, def) && !this.abilityMode.constructRemaining) {
+        this.abilityMode = null;
+        this.board.clearMarks();
+        this.renderEntities();
+        this.updateHUD();
+        this.updateUnitPanel(this.selected && this.entities.includes(this.selected) ? this.selected : u);
+        return;
+      }
       const key = JSON.stringify([r, c]);
       const targets = def.requiresTarget ? (def.computeTargets(this, u).map(JSON.stringify)) : [];
       
       if (def.multiSelect) {
-        // ... (multiSelect logic handled by confirm btn for packets, but we need to track it)
         if (targets.includes(key)) {
           const selected = this.abilityMode.selectedTiles || [];
           const idx = selected.findIndex(p => p[0] === r && p[1] === c);
           if (idx >= 0) selected.splice(idx, 1);
           else if (selected.length < (def.maxTargets || 5)) selected.push([r, c]);
           this.abilityMode.selectedTiles = selected;
+          if (selected.length >= (def.maxTargets || 5)) {
+            const fromR = u.row, fromC = u.col;
+            if (typeof def.performSelected === "function") {
+              def.performSelected(this, u, selected.slice());
+            } else {
+              for (const [sr, sc] of selected) {
+                def.perform(this, u, sr, sc);
+                this.animateAbilityCast(u, def, sr, sc);
+              }
+            }
+            this.playSfx && this.playSfx("ability");
+            if (this.isMultiplayer) {
+              window.Multiplayer.sendPacket('ABILITY', { fromR, fromC, targetTiles: selected.slice(), abilityName: def.name, ap: u.ap });
+            }
+            this.abilityMode = null;
+            this.renderEntities();
+            this.board.clearMarks();
+            this.updateUnitPanel(this.selected && this.entities.includes(this.selected) ? this.selected : u);
+            if (u.ap > 0) this.showActionHints(u);
+            this.checkWin();
+            return;
+          }
           this.board.clearMarks();
           this.board.markSelected(u.row, u.col);
           const valid = def.computeTargets(this, u);
-          this.board.markPositions(valid, "ability-hl");
+          this.board.markPositions(valid, "ability-range-max");
           this.board.markPositions(selected, "selected-target-hl");
           this.updateUnitPanel(u);
           return;
@@ -856,12 +1074,14 @@ class Game {
       if (!def.requiresTarget) {
         const fromR = u.row, fromC = u.col;
         def.perform(this, u);
+        this.animateAbilityCast(u, def, u.row, u.col);
         if (this.isMultiplayer) {
           window.Multiplayer.sendPacket('ABILITY', { fromR, fromC, abilityName: def.name, ap: u.ap });
         }
       } else if (targets.includes(key)) {
         const fromR = u.row, fromC = u.col;
         def.perform(this, u, r, c);
+        this.animateAbilityCast(u, def, r, c);
         const tar = this.board.getCell(r, c) || this.board.getCell(u.row, u.col);
         if (tar) {
           tar.classList.add("ability-anim");
@@ -872,13 +1092,26 @@ class Game {
           window.Multiplayer.sendPacket('ABILITY', { fromR, fromC, targetR: r, targetC: c, abilityName: def.name, ap: u.ap });
         }
       }
-      if (!this.abilityMode || this.abilityMode.done) {
+      const keepAbilityMode = !!(
+        this.abilityMode &&
+        this.abilityMode.unit === u &&
+        !this.abilityMode.done &&
+        (
+          this.abilityMode.constructRemaining > 0 ||
+          this.abilityMode.summonRemaining > 0 ||
+          def.multiSelect
+        )
+      );
+      if (!keepAbilityMode) {
         this.abilityMode = null;
       } else {
         const tiles = def.computeTargets(this, u);
         this.board.clearMarks();
         this.board.markSelected(u.row, u.col);
-        this.board.markPositions(tiles, "ability-hl");
+        this.board.markPositions(tiles, def.multiSelect ? "ability-range-max" : "ability-hl");
+        if (def.multiSelect && this.abilityMode.selectedTiles && this.abilityMode.selectedTiles.length) {
+          this.board.markPositions(this.abilityMode.selectedTiles, "selected-target-hl");
+        }
       }
       this.renderEntities();
       this.board.clearMarks();
@@ -954,7 +1187,7 @@ class Game {
       if (clickedEnt.kind === "unit") this.showActionHints(clickedEnt);
       return;
     }
-    this.selected = { kind: "tile", row: r, col: c, terrain: this.terrain[r][c] };
+    this.selected = { kind: "tile", row: r, col: c };
     this.updateUnitPanel(this.selected);
     const cell = this.board.getCell(r, c);
     if (cell) cell.classList.add("selected", "selected-empty");
@@ -1050,62 +1283,73 @@ class Game {
   }
 
   tickTurnEffects() {
-    // Hazards
+    this.tickHazardsForTeam(Config.TEAM.PLAYER);
+    this.tickHazardsForTeam(Config.TEAM.AI);
+    this.tickTimedStatusesForTeam(Config.TEAM.PLAYER);
+    this.tickTimedStatusesForTeam(Config.TEAM.AI);
+    this.syncSludgeStatuses();
+  }
+
+  revertBeastForm(unit) {
+    if (!unit || !unit.isBeast || !unit.originalStats) return;
+    unit.isBeast = false;
+    unit.beastTurns = 0;
+    Object.assign(unit, unit.originalStats);
+    delete unit.originalStats;
+    unit.hp = Math.min(unit.hp, unit.maxHp);
+    this.logEvent({ type: "status", msg: `${unit.team === "P" ? "Player" : "AI"} Druid reverted to Human form.` });
+    const cell = this.board.getCell(unit.row, unit.col);
+    if (cell) {
+      cell.classList.add("transform-anim");
+      setTimeout(() => cell.classList.remove("transform-anim"), 1500);
+    }
+    if (this.playSfx) this.playSfx("transform");
+  }
+
+  syncSludgeStatuses() {
+    for (const ent of this.entities) {
+      if (ent.kind !== "unit") continue;
+      const hazard = this.hazards[ent.row][ent.col];
+      ent.stuck = !!(hazard && hazard.kind === "sludge");
+    }
+  }
+
+  tickHazardsForTeam(team) {
     for (let r = 0; r < Config.ROWS; r++) {
       for (let c = 0; c < Config.COLS; c++) {
         const hazard = this.hazards[r][c];
-        if (hazard) {
-          hazard.turns--;
-          if (hazard.turns <= 0) {
-            this.hazards[r][c] = null;
-            const unit = this.occupants[r][c];
-            if (unit && unit.stuck) {
-              unit.stuck = false;
-            }
-          } else {
-            const unit = this.occupants[r][c];
-            if (unit && hazard.kind === "sludge") {
-              unit.stuck = true;
-            }
-          }
+        if (!hazard || hazard.ownerTeam !== team) continue;
+        hazard.turns -= 1;
+        if (hazard.turns <= 0) {
+          this.hazards[r][c] = null;
         }
       }
     }
-    
-    // Construction Sites
-    for (let r = 0; r < Config.ROWS; r++) {
-      for (let c = 0; c < Config.COLS; c++) {
-        const cs = this.constructionSites[r][c];
-        if (cs) {
-          cs.turns--;
-          if (cs.turns <= 0) {
-            this.terrain[r][c] = cs.type;
-            this.constructionSites[r][c] = null;
-            this.logEvent({ type: "status", msg: "Construction complete!" });
-            this.playSfx && this.playSfx("click");
-          }
-        }
-      }
-    }
+    this.syncSludgeStatuses();
+  }
 
-    // Unit Effects (Beast Form)
+  tickTimedStatusesForTeam(team) {
     for (const ent of this.entities) {
-      if (ent.kind === "unit" && ent.isBeast) {
-        ent.beastTurns--;
-        if (ent.beastTurns <= 0) {
-          ent.isBeast = false;
-          Object.assign(ent, ent.originalStats);
-          delete ent.originalStats;
-          this.logEvent({ type: "status", msg: `${ent.team === "P" ? "Player" : "AI"} Druid reverted to Human form.` });
-          const cell = this.board.getCell(ent.row, ent.col);
-          if (cell) {
-             cell.classList.add("transform-anim");
-             setTimeout(() => cell.classList.remove("transform-anim"), 1500);
-          }
-          if (this.playSfx) this.playSfx("transform");
-        }
+      if (ent.kind !== "unit" || ent.team !== team) continue;
+      if ((ent.hexTurns || 0) > 0) {
+        ent.hexTurns -= 1;
+        if (ent.hexTurns <= 0) ent.hexMarked = false;
+      }
+      if (ent.isBeast && (ent.beastTurns || 0) > 0) {
+        ent.beastTurns -= 1;
+        if (ent.beastTurns <= 0) this.revertBeastForm(ent);
       }
     }
+  }
+
+  startTurnForTeam(team) {
+    this.generateEnergy(team);
+    this.resetAPForTeam(team);
+    this.tickHazardsForTeam(team);
+    this.tickTimedStatusesForTeam(team);
+    this.applyHazardsForTeam(team);
+    this.tickCooldowns(team);
+    this.renderEntities();
   }
 
   applyDamage(target, dmg, source) {
@@ -1114,7 +1358,7 @@ class Game {
     const abilityBonus = (source && source.kind === "unit" && this.abilityMode && this.abilityMode.unit === source) ? ((source.level || 1) - 1) : 0;
     let effectiveDmg = dmg + bonus + abilityBonus;
     if (target.kind === "unit" && target.isBeast) {
-        effectiveDmg = Math.floor(effectiveDmg * 0.8);
+        effectiveDmg = Math.max(1, Math.floor(effectiveDmg * 0.8));
     }
     target.hp = Math.max(0, target.hp - effectiveDmg);
     const cell = this.board.getCell(target.row, target.col);
@@ -1153,6 +1397,7 @@ class Game {
   }
 
   attack(attacker, target) {
+    this.animateAttack(attacker, target);
     this.applyDamage(target, attacker.dmg, attacker);
   }
 
@@ -1186,10 +1431,7 @@ class Game {
 
       this.turn = Config.TEAM.AI;
       this.updateHUD();
-      this.generateEnergy(Config.TEAM.AI);
-      this.resetAPForTeam(Config.TEAM.AI);
-      this.applyHazardsForTeam(Config.TEAM.AI);
-      this.tickCooldowns(Config.TEAM.AI);
+      this.startTurnForTeam(Config.TEAM.AI);
       await this.runAI();
       
       // 2. Both teams' Nexuses do damage after AI finishes its turn (every turn)
@@ -1198,13 +1440,9 @@ class Game {
 
       this.checkWin();
       this.turn = Config.TEAM.PLAYER;
-      this.generateEnergy(Config.TEAM.PLAYER);
-      this.resetAPForTeam(Config.TEAM.PLAYER);
-      this.applyHazardsForTeam(Config.TEAM.PLAYER);
-      this.tickCooldowns(Config.TEAM.PLAYER);
+      this.startTurnForTeam(Config.TEAM.PLAYER);
       this.abilityMode = null;
       this.updateHUD();
-      this.tickHazards();
       this.renderEntities();
     }
   }
@@ -1219,14 +1457,7 @@ class Game {
 
     this.turn = nextTurn;
     
-    this.generateEnergy(nextTurn);
-    this.resetAPForTeam(nextTurn);
-    this.applyHazardsForTeam(nextTurn);
-    this.tickCooldowns(nextTurn);
-    
-    if (nextTurn === Config.TEAM.PLAYER) {
-      this.tickHazards();
-    }
+    this.startTurnForTeam(nextTurn);
     
     this.abilityMode = null;
     this.updateHUD();
@@ -1249,16 +1480,10 @@ class Game {
         }
       }
       // AI Rune Purchasing
-      if (window.RuneDefs && this.energy[Config.TEAM.AI] >= 3) {
-        const aiUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.AI && e.runes.length < 3);
-        if (aiUnits.length > 0 && Math.random() < 0.4) {
-           const unit = aiUnits[Math.floor(Math.random() * aiUnits.length)];
-           const runes = window.RuneDefs;
-           const rune = runes[Math.floor(Math.random() * runes.length)];
-           if (this.energy[Config.TEAM.AI] >= rune.cost) {
-             this.buyRune(unit, rune.id);
-             this.logEvent({ type: "status", msg: `AI bought ${rune.name} for ${unit.type}` });
-           }
+      if (window.RuneDefs && this.energy[Config.TEAM.AI] >= 2) {
+        const pick = this.chooseBestAIRunePurchase();
+        if (pick && this.buyRune(pick.unit, pick.rune.id)) {
+          this.logEvent({ type: "status", msg: `AI bought ${pick.rune.name} for ${pick.unit.type}` });
         }
       }
     }
@@ -1269,6 +1494,44 @@ class Game {
     for (const u of aiUnits) {
       while (u.ap > 0) {
         const healTargets = this.getHealTargets(u);
+        if (u.type === "Druid" && ((u.abilityCooldowns["Shapeshift"] || 0) === 0) && !u.isBeast) {
+          const def = this.getAbilityDefForUnit(u);
+          const enemiesNearby = playerUnits.some(p => Math.max(Math.abs(p.row - u.row), Math.abs(p.col - u.col)) <= 2);
+          if (def && (u.hp <= Math.ceil(u.maxHp * 0.65) || enemiesNearby)) {
+            def.perform(this, u, u.row, u.col);
+            this.animateAbilityCast(u, def, u.row, u.col);
+            await this.delay(360);
+            continue;
+          }
+        }
+        if (u.type === "Avenger" && ((u.abilityCooldowns["Vengeance"] || 0) === 0) && ((this.teamDeaths && this.teamDeaths[u.team]) || 0) > 0) {
+          const def = this.getAbilityDefForUnit(u);
+          if (def) {
+            def.perform(this, u);
+            this.animateAbilityCast(u, def, u.row, u.col);
+            await this.delay(320);
+            continue;
+          }
+        }
+        if (u.type === "Necromancer" && ((u.abilityCooldowns["Raise Dead"] || 0) === 0)) {
+          const def = this.getAbilityDefForUnit(u);
+          if (def) {
+            const targets = def.computeTargets(this, u)
+              .sort((a, b) => (Math.abs(focus.row - a[0]) + Math.abs(focus.col - a[1])) - (Math.abs(focus.row - b[0]) + Math.abs(focus.col - b[1])));
+            if (targets.length >= 2) {
+              const count = Math.min(3, targets.length);
+              const selected = targets.slice(0, count);
+              if (typeof def.performSelected === "function") def.performSelected(this, u, selected);
+              else {
+                for (const [tr, tc] of selected) def.perform(this, u, tr, tc);
+              }
+              for (const [tr, tc] of selected) this.animateAbilityCast(u, def, tr, tc);
+              this.abilityMode = null;
+              await this.delay(360);
+              continue;
+            }
+          }
+        }
         if (u.type === "Mage" && ((u.abilityCooldowns["Frostbolt"] || 0) === 0)) {
           const def = (window.Abilities && window.Abilities.Mage && window.Abilities.Mage[0]);
           if (def) {
@@ -1291,6 +1554,7 @@ class Game {
               const best = scored[0];
               const target = this.occupants[best.r][best.c];
               def.perform(this, u, best.r, best.c);
+              this.animateAbilityCast(u, def, best.r, best.c);
               this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Frostbolt", target: target ? `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` : "Unknown" });
               await this.delay(320);
               continue;
@@ -1313,6 +1577,7 @@ class Game {
             if (scored.length > 0 && scored[0].score > 0) {
               const target = scored[0].target;
               def.perform(this, u, scored[0].r, scored[0].c);
+              this.animateAbilityCast(u, def, scored[0].r, scored[0].c);
               this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Hex", target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
               await this.delay(320);
               continue;
@@ -1342,6 +1607,7 @@ class Game {
             }).sort((a, b) => b.score - a.score);
             if (scored.length > 0 && scored[0].score > 0) {
               def.perform(this, u, scored[0].r, scored[0].c);
+              this.animateAbilityCast(u, def, scored[0].r, scored[0].c);
               this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Quagmire", target: `(${scored[0].r}, ${scored[0].c})` });
               await this.delay(320);
               continue;
@@ -1375,6 +1641,7 @@ class Game {
               }
               if (bestTarget && maxHits > 0) {
                 def.perform(this, u, bestTarget[0], bestTarget[1]);
+                this.animateAbilityCast(u, def, bestTarget[0], bestTarget[1]);
                 this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Catalyze", target: `(${bestTarget[0]}, ${bestTarget[1]})` });
                 await this.delay(320);
                 continue;
@@ -1401,6 +1668,7 @@ class Game {
               }
               if (bestTarget && maxEnemies > 0) {
                 def.perform(this, u, bestTarget[0], bestTarget[1]);
+                this.animateAbilityCast(u, def, bestTarget[0], bestTarget[1]);
                 this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Ignite", target: `(${bestTarget[0]}, ${bestTarget[1]})` });
                 await this.delay(360);
                 continue;
@@ -1429,6 +1697,7 @@ class Game {
               }
               if (best) {
                 def.perform(this, u, best[0], best[1]);
+                this.animateAbilityCast(u, def, best[0], best[1]);
                 this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Pull", target: `(${best[0]}, ${best[1]})` });
                 await this.delay(360);
                 continue;
@@ -1436,80 +1705,66 @@ class Game {
             }
           }
           if (u.type === "Berserker" && ((u.abilityCooldowns["Whirlwind"] || 0) === 0)) {
+            const def = this.getAbilityDefForUnit(u);
             const adj = this.getAdjacentEnemyTiles(u);
-            if (adj.length) {
-              for (const [rr, cc] of adj) {
-                const t = this.occupants[rr][cc];
-                if (t) this.applyDamage(t, u.dmg, u);
-              }
-              u.ap -= 1;
-              u.abilityCooldowns["Whirlwind"] = (u.abilityCooldowns["Whirlwind"] || 0) + 2;
+            if (def && adj.length) {
+              def.perform(this, u);
+              this.animateAbilityCast(u, def, u.row, u.col);
               this.logEvent({ type: "ability", caster: `AI Berserker`, ability: "Whirlwind" });
               await this.delay(320);
               continue;
             }
           }
           if (u.type === "Paladin" && ((u.abilityCooldowns["Smite"] || 0) === 0)) {
-            const smites = this.getSmiteTargets(u)
-              .map(([r, c]) => this.occupants[r][c])
-              .filter(Boolean);
-            if (smites.length) {
+            const def = this.getAbilityDefForUnit(u);
+            const smites = this.getSmiteTargets(u);
+            if (def && smites.length) {
               smites.sort((a, b) => {
-                const sa = (a.kind === "base" ? 100 : 0) + (a.maxHp - a.hp);
-                const sb = (b.kind === "base" ? 100 : 0) + (b.maxHp - b.hp);
+                const ta = this.occupants[a[0]][a[1]];
+                const tb = this.occupants[b[0]][b[1]];
+                const sa = (ta.kind === "base" ? 100 : 0) + (ta.maxHp - ta.hp);
+                const sb = (tb.kind === "base" ? 100 : 0) + (tb.maxHp - tb.hp);
                 return sb - sa;
               });
-              const target = smites[0];
-              this.applyDamage(target, u.dmg + 1, u);
-              u.ap -= 1;
-              u.abilityCooldowns["Smite"] = (u.abilityCooldowns["Smite"] || 0) + 2;
+              const [tr, tc] = smites[0];
+              const target = this.occupants[tr][tc];
+              def.perform(this, u, tr, tc);
+              this.animateAbilityCast(u, def, tr, tc);
               this.logEvent({ type: "ability", caster: `AI Paladin`, ability: "Smite", target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
               await this.delay(320);
               continue;
             }
           }
           if (u.type === "Archer" && ((u.abilityCooldowns["Snipe"] || 0) === 0)) {
-            const snipes = this.getSnipeTargets(u)
-              .map(([r, c]) => this.occupants[r][c])
-              .filter(Boolean);
-            if (snipes.length) {
+            const def = this.getAbilityDefForUnit(u);
+            const snipes = this.getSnipeTargets(u);
+            if (def && snipes.length) {
               snipes.sort((a, b) => {
-                const sa = (a.kind === "base" ? 100 : 0) + (a.maxHp - a.hp);
-                const sb = (b.kind === "base" ? 100 : 0) + (b.maxHp - b.hp);
+                const ta = this.occupants[a[0]][a[1]];
+                const tb = this.occupants[b[0]][b[1]];
+                const sa = (ta.kind === "base" ? 100 : 0) + (ta.maxHp - ta.hp);
+                const sb = (tb.kind === "base" ? 100 : 0) + (tb.maxHp - tb.hp);
                 return sb - sa;
               });
-              const target = snipes[0];
-              this.applyDamage(target, u.dmg + 1, u);
-              u.ap -= 1;
-              u.abilityCooldowns["Snipe"] = (u.abilityCooldowns["Snipe"] || 0) + 2;
+              const [tr, tc] = snipes[0];
+              const target = this.occupants[tr][tc];
+              def.perform(this, u, tr, tc);
+              this.animateAbilityCast(u, def, tr, tc);
               this.logEvent({ type: "ability", caster: `AI Archer`, ability: "Snipe", target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
               await this.delay(300);
               continue;
             }
           }
           if (u.type === "Warrior" && ((u.abilityCooldowns["Charge"] || 0) === 0)) {
+            const def = this.getAbilityDefForUnit(u);
             const charges = this.getChargeTargets(u);
-            if (charges.length) {
+            if (def && charges.length) {
               const best = charges
                 .map(([r, c]) => ({ r, c, d: Math.abs(focus.row - r) + Math.abs(focus.col - c) }))
                 .sort((a, b) => a.d - b.d)[0];
               if (best) {
-                const path = [];
-                const dr = Math.sign(best.r - u.row), dc = Math.sign(best.c - u.col);
-                let cr = u.row, cc = u.col;
-                for (let step = 0; step < 2; step++) {
-                  cr += dr; cc += dc;
-                  if (!this.inBounds(cr, cc)) break;
-                  if (this.terrain[cr][cc] || this.occupants[cr][cc] != null) break;
-                  path.push([cr, cc]);
-                }
-                if (path.length) {
-                  await this.animateMove(u, path, { dash: true, stepDelay: 120 });
-                } else {
-                  this.moveUnit(u, best.r, best.c, { dash: true });
-                }
-                u.ap -= 1;
-                u.abilityCooldowns["Charge"] = (u.abilityCooldowns["Charge"] || 0) + 2;
+                def.perform(this, u, best.r, best.c);
+                this.animateAbilityCast(u, def, best.r, best.c);
                 this.logEvent({ type: "ability", caster: `AI Warrior`, ability: "Charge" });
                 await this.delay(320);
                 continue;
@@ -1542,6 +1797,8 @@ class Game {
               const pick = candidates[0];
               if (pick) {
                 def.perform(this, u, pick.r, pick.c);
+                this.animateAbilityCast(u, def, pick.r, pick.c);
+                this.abilityMode = null;
                 this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Construct", target: `(${pick.r}, ${pick.c})` });
                 await this.delay(320);
                 continue;
@@ -1563,6 +1820,7 @@ class Game {
                const def = (window.Abilities && window.Abilities.Cleric && window.Abilities.Cleric[0]);
                if (def) {
                  def.perform(this, u);
+                 this.animateAbilityCast(u, def, u.row, u.col);
                  this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Mass Heal" });
                  await this.delay(320);
                  continue;
@@ -1592,6 +1850,7 @@ class Game {
               if (scored.length > 0) {
                  const pick = scored[0];
                  def.perform(this, u, pick.r, pick.c);
+                 this.animateAbilityCast(u, def, pick.r, pick.c);
                  this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Shadow Strike", target: `(${pick.r}, ${pick.c})` });
                  await this.delay(320);
                  continue;
@@ -1851,72 +2110,6 @@ Game.prototype.generateTerrain = function() {
     for (let i = 0; i < 6; i++) sum += Math.random();
     return (sum / 6);
   };
-
-Game.prototype.createParticles = function(r, c, color) {
-  const cell = this.board.getCell(r, c);
-  if (!cell) return;
-  const count = 12;
-  for (let i = 0; i < count; i++) {
-    const p = document.createElement("div");
-    p.className = "particle";
-    p.style.backgroundColor = color;
-    p.style.left = "50%";
-    p.style.top = "50%";
-    const angle = Math.random() * 2 * Math.PI;
-    const dist = 15 + Math.random() * 35;
-    const tx = Math.cos(angle) * dist + "px";
-    const ty = Math.sin(angle) * dist + "px";
-    p.style.setProperty("--tx", tx);
-    p.style.setProperty("--ty", ty);
-    cell.appendChild(p);
-    setTimeout(() => p.remove(), 800);
-  }
-};
-
-Game.prototype.playSfx = function(kind) {
-  const ctx = this.audioCtx;
-  if (!ctx) return;
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-
-  if (kind === "transform") {
-    o.type = "sawtooth";
-    o.frequency.setValueAtTime(80, ctx.currentTime);
-    o.frequency.linearRampToValueAtTime(200, ctx.currentTime + 0.5);
-    o.frequency.linearRampToValueAtTime(60, ctx.currentTime + 1.2);
-    g.gain.setValueAtTime(0.1, ctx.currentTime);
-    g.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.2);
-    o.connect(g).connect(ctx.destination);
-    o.start();
-    o.stop(ctx.currentTime + 1.3);
-    return;
-  }
-  
-  if (kind === "construct") {
-    o.type = "square";
-    o.frequency.setValueAtTime(150, ctx.currentTime);
-    o.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.15);
-    g.gain.setValueAtTime(0.05, ctx.currentTime);
-    g.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
-    o.connect(g).connect(ctx.destination);
-    o.start();
-    o.stop(ctx.currentTime + 0.2);
-    return;
-  }
-
-  o.type = "sine";
-  o.frequency.value =
-    kind === "hit" ? 320 :
-    kind === "heal" ? 520 :
-    kind === "ability" ? 420 :
-    kind === "click" ? 650 :
-    kind === "move" ? 440 :
-    kind === "dash" ? 600 : 420;
-  g.gain.value = 0.03;
-  o.connect(g).connect(ctx.destination);
-  o.start();
-  setTimeout(() => { o.stop(); o.disconnect(); g.disconnect(); }, 120);
-};
   const edgeBiasIndex = (size) => {
     const edgeSide = Math.random() < 0.5 ? 0 : size - 1;
     const jitter = Math.round((Math.random() - 0.5) * size * 0.3);
@@ -1953,6 +2146,220 @@ Game.prototype.playSfx = function(kind) {
     pairsPlaced++;
   }
   this.placeNexuses();
+};
+
+Game.prototype.createParticles = function(r, c, color) {
+  const cell = this.board.getCell(r, c);
+  if (!cell) return;
+  const count = 12;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("div");
+    p.className = "particle";
+    p.style.backgroundColor = color;
+    p.style.left = "50%";
+    p.style.top = "50%";
+    const angle = Math.random() * 2 * Math.PI;
+    const dist = 15 + Math.random() * 35;
+    const tx = Math.cos(angle) * dist + "px";
+    const ty = Math.sin(angle) * dist + "px";
+    p.style.setProperty("--tx", tx);
+    p.style.setProperty("--ty", ty);
+    cell.appendChild(p);
+    setTimeout(() => p.remove(), 800);
+  }
+};
+
+Game.prototype.ensureFxLayer = function() {
+  if (!this.board || !this.board.mountEl) return null;
+  let layer = this.board.mountEl.querySelector(".fx-layer");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.className = "fx-layer";
+    this.board.mountEl.appendChild(layer);
+  }
+  return layer;
+};
+
+Game.prototype.getCellCenter = function(r, c) {
+  const cell = this.board.getCell(r, c);
+  const grid = this.board.mountEl;
+  if (!cell || !grid) return null;
+  const cellRect = cell.getBoundingClientRect();
+  const gridRect = grid.getBoundingClientRect();
+  return {
+    x: cellRect.left - gridRect.left + cellRect.width / 2,
+    y: cellRect.top - gridRect.top + cellRect.height / 2
+  };
+};
+
+Game.prototype.spawnBeamFx = function(from, to, className, duration) {
+  const layer = this.ensureFxLayer();
+  const a = this.getCellCenter(from.row, from.col);
+  const b = this.getCellCenter(to.row, to.col);
+  if (!layer || !a || !b) return;
+  const beam = document.createElement("div");
+  beam.className = `fx-beam ${className || ""}`.trim();
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = Math.max(18, Math.hypot(dx, dy));
+  const angle = Math.atan2(dy, dx);
+  beam.style.width = `${length}px`;
+  beam.style.left = `${a.x}px`;
+  beam.style.top = `${a.y}px`;
+  beam.style.transform = `translateY(-50%) rotate(${angle}rad)`;
+  layer.appendChild(beam);
+  setTimeout(() => beam.remove(), duration || 420);
+};
+
+Game.prototype.spawnBurstFx = function(r, c, className, duration) {
+  const layer = this.ensureFxLayer();
+  const center = this.getCellCenter(r, c);
+  if (!layer || !center) return;
+  const burst = document.createElement("div");
+  burst.className = `fx-burst ${className || ""}`.trim();
+  burst.style.left = `${center.x}px`;
+  burst.style.top = `${center.y}px`;
+  layer.appendChild(burst);
+  setTimeout(() => burst.remove(), duration || 520);
+};
+
+Game.prototype.animateAttack = function(attacker, target) {
+  if (!attacker || !target) return;
+  const range = Math.max(Math.abs(attacker.row - target.row), Math.abs(attacker.col - target.col));
+  if (range <= 1) {
+    this.spawnBurstFx(target.row, target.col, "fx-slash", 360);
+    this.createParticles(target.row, target.col, "#f87171");
+    return;
+  }
+  this.spawnBeamFx(attacker, target, "fx-arrow", 320);
+  this.spawnBurstFx(target.row, target.col, "fx-impact", 380);
+};
+
+Game.prototype.animateAbilityCast = function(unit, def, r, c) {
+  if (!unit || !def) return;
+  const target = { row: typeof r === "number" ? r : unit.row, col: typeof c === "number" ? c : unit.col };
+  const source = { row: unit.row, col: unit.col };
+  const name = def.name || "";
+  if (name === "Shapeshift") {
+    this.spawnBurstFx(unit.row, unit.col, "fx-verdant", 900);
+    this.createParticles(unit.row, unit.col, "#84cc16");
+    return;
+  }
+  if (name === "Mass Heal") {
+    this.spawnBurstFx(unit.row, unit.col, "fx-healwave", 760);
+    this.createParticles(unit.row, unit.col, "#38bdf8");
+    return;
+  }
+  if (name === "Ignite") {
+    this.spawnBeamFx(source, target, "fx-fire", 340);
+    this.spawnBurstFx(target.row, target.col, "fx-fireburst", 760);
+    this.createParticles(target.row, target.col, "#fb923c");
+    return;
+  }
+  if (name === "Quagmire") {
+    this.spawnBeamFx(source, target, "fx-sludge", 340);
+    this.spawnBurstFx(target.row, target.col, "fx-sludgeburst", 760);
+    this.createParticles(target.row, target.col, "#84cc16");
+    return;
+  }
+  if (name === "Hex") {
+    this.spawnBeamFx(source, target, "fx-hex", 340);
+    this.spawnBurstFx(target.row, target.col, "fx-hexburst", 560);
+    return;
+  }
+  if (name === "Frostbolt") {
+    this.spawnBeamFx(source, target, "fx-frost", 340);
+    this.spawnBurstFx(target.row, target.col, "fx-frostburst", 620);
+    return;
+  }
+  if (name === "Pull") {
+    this.spawnBeamFx(source, target, "fx-magnet", 380);
+    this.spawnBurstFx(target.row, target.col, "fx-impact", 420);
+    return;
+  }
+  if (name === "Raise Dead") {
+    this.spawnBurstFx(target.row, target.col, "fx-necro", 680);
+    return;
+  }
+  if (name === "Catalyze") {
+    this.spawnBeamFx(source, target, "fx-alchemy", 320);
+    this.spawnBurstFx(target.row, target.col, "fx-alchemyburst", 700);
+    return;
+  }
+  if (name === "Shadow Strike") {
+    this.spawnBurstFx(unit.row, unit.col, "fx-shadow", 540);
+    this.spawnBurstFx(target.row, target.col, "fx-shadow", 540);
+    return;
+  }
+  if (name === "Charge") {
+    this.spawnBeamFx(source, target, "fx-charge", 260);
+    this.spawnBurstFx(target.row, target.col, "fx-impact", 320);
+    return;
+  }
+  if (name === "Smite") {
+    this.spawnBeamFx(source, target, "fx-smite", 300);
+    this.spawnBurstFx(target.row, target.col, "fx-radiant", 520);
+    return;
+  }
+  if (name === "Snipe") {
+    this.spawnBeamFx(source, target, "fx-arrow", 280);
+    this.spawnBurstFx(target.row, target.col, "fx-impact", 320);
+    return;
+  }
+  if (name === "Whirlwind") {
+    this.spawnBurstFx(unit.row, unit.col, "fx-whirlwind", 600);
+    return;
+  }
+  if (name === "Construct") {
+    this.spawnBurstFx(target.row, target.col, "fx-build", 620);
+    return;
+  }
+  this.spawnBurstFx(target.row, target.col, "fx-impact", 360);
+};
+
+Game.prototype.playSfx = function(kind) {
+  const ctx = this.audioCtx;
+  if (!ctx) return;
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+
+  if (kind === "transform") {
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(80, ctx.currentTime);
+    o.frequency.linearRampToValueAtTime(200, ctx.currentTime + 0.5);
+    o.frequency.linearRampToValueAtTime(60, ctx.currentTime + 1.2);
+    g.gain.setValueAtTime(0.1, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.2);
+    o.connect(g).connect(ctx.destination);
+    o.start();
+    o.stop(ctx.currentTime + 1.3);
+    return;
+  }
+
+  if (kind === "construct") {
+    o.type = "square";
+    o.frequency.setValueAtTime(150, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.15);
+    g.gain.setValueAtTime(0.05, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
+    o.connect(g).connect(ctx.destination);
+    o.start();
+    o.stop(ctx.currentTime + 0.2);
+    return;
+  }
+
+  o.type = "sine";
+  o.frequency.value =
+    kind === "hit" ? 320 :
+    kind === "heal" ? 520 :
+    kind === "ability" ? 420 :
+    kind === "click" ? 650 :
+    kind === "move" ? 440 :
+    kind === "dash" ? 600 : 420;
+  g.gain.value = 0.03;
+  o.connect(g).connect(ctx.destination);
+  o.start();
+  setTimeout(() => { o.stop(); o.disconnect(); g.disconnect(); }, 120);
 };
 
 Game.prototype.placeNexuses = function() {
@@ -2037,14 +2444,14 @@ Game.prototype.applyNexusEffects = function(team) {
   const opp = team === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER;
   const base = this.entities.find(e => e.kind === "base" && e.team === opp);
   if (base) {
-    this.applyDamage(base, 2 * owned, null);
+    this.applyDamage(base, owned, null);
     let teamName = team === Config.TEAM.PLAYER ? "Player" : "AI";
     let oppName = opp === Config.TEAM.PLAYER ? "Player" : "AI";
     if (this.isMultiplayer) {
       teamName = team === this.playerTeam ? "Your" : "Enemy";
       oppName = opp === this.playerTeam ? "Your" : "Enemy";
     }
-    this.logEvent({ type: "nexus", msg: `${teamName} nexus(es) dealt ${2*owned} to ${oppName} base` });
+    this.logEvent({ type: "nexus", msg: `${teamName} nexus(es) dealt ${owned} to ${oppName} base` });
     this.renderEntities(); // Refresh base health bars
   }
 };
@@ -2116,10 +2523,10 @@ Game.prototype.syncState = function(data) {
 
 Game.prototype.buyRune = function(unit, runeId) {
   const rune = window.RuneDefs.find(r => r.id === runeId);
-  if (!rune) return;
-  if (this.energy[unit.team] < rune.cost) return;
-  if (unit.runes.length >= Math.min(3, unit.level || 1)) return;
-  if (unit.runes.some(r => r.id === runeId)) return;
+  if (!rune) return false;
+  if (this.energy[unit.team] < rune.cost) return false;
+  if (unit.runes.length >= Math.min(3, unit.level || 1)) return false;
+  if (unit.runes.some(r => r.id === runeId)) return false;
 
   this.spendEnergy(unit.team, rune.cost);
   unit.runes.push(rune);
@@ -2131,6 +2538,47 @@ Game.prototype.buyRune = function(unit, runeId) {
   if (this.isMultiplayer && unit.team === this.playerTeam) {
     window.Multiplayer.sendPacket('BUY_RUNE', { fromR: unit.row, fromC: unit.col, runeId });
   }
+  return true;
+};
+
+Game.prototype.getAbilityDefForUnit = function(unit) {
+  return unit && window.Abilities && window.Abilities[unit.type] ? window.Abilities[unit.type][0] : null;
+};
+
+Game.prototype.scoreAIRune = function(unit, rune) {
+  if (!unit || !rune) return -Infinity;
+  let score = 0;
+  if (rune.id === "rune_hp") score += unit.maxHp <= 5 ? 7 : 4;
+  if (rune.id === "rune_dmg") score += unit.dmg >= 3 ? 8 : 5;
+  if (rune.id === "rune_move") score += unit.range <= 2 ? 7 : 4;
+  if (rune.id === "rune_range") score += unit.range >= 2 ? 8 : 3;
+  if (rune.id === "rune_ap") score += unit.apMax <= 2 ? 9 : 5;
+  if (unit.type === "Cleric" || unit.type === "Mage" || unit.type === "Hex") {
+    if (rune.id === "rune_range") score += 4;
+  }
+  if (unit.type === "Warrior" || unit.type === "Berserker" || unit.type === "Rogue") {
+    if (rune.id === "rune_move" || rune.id === "rune_dmg") score += 4;
+  }
+  if (unit.type === "Druid" && rune.id === "rune_hp") score += 5;
+  return score - (rune.cost * 0.35);
+};
+
+Game.prototype.chooseBestAIRunePurchase = function() {
+  const candidates = this.entities.filter(e =>
+    e.kind === "unit" &&
+    e.team === Config.TEAM.AI &&
+    e.runes.length < Math.min(3, e.level || 1)
+  );
+  let best = null;
+  for (const unit of candidates) {
+    for (const rune of window.RuneDefs || []) {
+      if (unit.runes.some(r => r.id === rune.id)) continue;
+      if (this.energy[Config.TEAM.AI] < rune.cost) continue;
+      const score = this.scoreAIRune(unit, rune);
+      if (!best || score > best.score) best = { unit, rune, score };
+    }
+  }
+  return best && best.score > 0 ? best : null;
 };
  
 Game.prototype.awardExp = function(unit, amount, targetOpt) {

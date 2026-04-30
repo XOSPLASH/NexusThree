@@ -17,7 +17,7 @@ class Board {
         cell.className = "cell";
         cell.dataset.row = String(r);
         cell.dataset.col = String(c);
-        cell.setAttribute("aria-label", `Cell ${r}, ${c}`);
+        cell.setAttribute("aria-label", `Cell ${r + 1}, ${c + 1}`);
         this.cells[r][c] = cell;
         frag.appendChild(cell);
       }
@@ -33,7 +33,7 @@ class Board {
 
   clearMarks() {
     this.forEachCell(cell => {
-      cell.classList.remove("selected", "move-hl", "attack-hl", "heal-hl", "ability-hl", "ability-range-max", "attack-range-hl", "selected-player", "selected-enemy", "selected-empty", "buy-hl");
+      cell.classList.remove("selected", "move-hl", "attack-hl", "heal-hl", "ability-hl", "ability-range-max", "attack-range-hl", "selected-player", "selected-enemy", "selected-empty", "selected-target-hl", "buy-hl");
     });
   }
 

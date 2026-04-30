@@ -9,7 +9,7 @@
   };
   const makeHex = () => ({
     name: "Hex",
-    desc: "Mark an enemy within range; marked take +1 damage.",
+    desc: "Mark an enemy within range for 2 turns; marked units take +1 damage.",
     range: 3,
     rangePattern: "orthogonal",
     requiresTarget: true,
@@ -28,6 +28,7 @@
       const target = game.occupants[r][c];
       if (!target || target.kind !== "unit" || target.team === unit.team) return;
       target.hexMarked = true;
+      target.hexTurns = Math.max(target.hexTurns || 0, 2);
       const cell = game.board.getCell(target.row, target.col);
       if (cell) {
         cell.classList.add("ability-anim");

@@ -32,7 +32,7 @@
           const rr = r + dr, cc = c + dc;
           if (!game.inBounds(rr, cc)) continue;
           if (game.terrain[rr][cc] === "water") continue;
-          game.hazards[rr][cc] = { kind: "fire", turns: 2 };
+          game.hazards[rr][cc] = { kind: "fire", turns: 2, ownerTeam: unit.team };
           const cell = game.board.getCell(rr, cc);
           if (cell) {
             cell.classList.add("ability-anim");
@@ -45,6 +45,7 @@
       unit.abilityCooldowns["Ignite"] = baseCd;
       if (game.playSfx) game.playSfx("ability");
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Firecaller`, ability: "Ignite" });
+      if (game.syncSludgeStatuses) game.syncSludgeStatuses();
       game.renderEntities();
     },
   });

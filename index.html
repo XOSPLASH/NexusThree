@@ -54,7 +54,10 @@
               <div id="unit-desc" class="unit-desc">Select a unit to view details.</div>
             </div>
           </div>
-          <ul id="stats-list" class="list"></ul>
+          <div class="details-section stats-section">
+            <div class="section-label">Stats</div>
+            <ul id="stats-list" class="list"></ul>
+          </div>
           <!-- Abilities button added here to trigger popup -->
           <button id="show-abilities-btn" class="btn btn-primary" style="display:none; width:100%; margin-top:12px;">View Abilities</button>
         </div>
@@ -80,7 +83,7 @@
               <div id="peer-id-display">ID: Loading...</div>
             </div>
             <div class="mp-join-form">
-              <input type="text" id="join-id-input" placeholder="Enter Friend ID">
+              <input type="text" id="join-id-input" placeholder="Enter Friend ID" aria-label="Friend ID">
               <button id="connect-btn" class="btn btn-secondary">Join Match</button>
             </div>
           </div>

@@ -9,7 +9,7 @@
   };
   const makeQuagmire = () => ({
     name: "Quagmire",
-    desc: "Create a 3x3 area where units cannot move out. Duration: 2 turns.",
+    desc: "Create a 3x3 area where units cannot move out. Duration: 2 of Sludge's turns.",
     range: 3,
     rangePattern: "select",
     requiresTarget: true,
@@ -23,12 +23,13 @@
         for (let dc = -1; dc <= 1; dc++) {
           const rr = r + dr, cc = c + dc;
           if (!game.inBounds(rr, cc)) continue;
-          game.hazards[rr][cc] = { kind: "sludge", turns: this.duration };
+          game.hazards[rr][cc] = { kind: "sludge", turns: this.duration, ownerTeam: unit.team };
         }
       }
       unit.ap = Math.max(0, unit.ap - 1);
       const baseCd = (window.Entities.unitDefs.Sludge.cooldowns && window.Entities.unitDefs.Sludge.cooldowns["Quagmire"]) || 3;
       unit.abilityCooldowns["Quagmire"] = baseCd;
+      if (game.syncSludgeStatuses) game.syncSludgeStatuses();
       game.renderEntities();
       game.board.clearMarks();
       if (game.playSfx) game.playSfx("ability");

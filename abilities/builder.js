@@ -13,6 +13,7 @@
     name: "Construct",
     desc: "Place up to 5 tiles (one per click): Wall/Bridge or Clear.",
     range: 3,
+    previewSize: 1,
     rangePattern: "select",
     requiresTarget: true,
     computeTargets(game, unit) {

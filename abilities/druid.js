@@ -43,6 +43,7 @@
       unit.move = 4; // 3 * 1.3 ~= 3.9 -> 4
       unit.symbol = "🐻";
       unit.range = 1; // Melee range in beast form
+      unit.ap = Math.max(0, unit.ap - 1);
 
       // Visuals
       const cell = game.board.getCell(unit.row, unit.col);

@@ -32,6 +32,11 @@ const makeUnit = (team, type, row, col) => ({
   apMax: 2,
   ap: 2,
   stunnedTurns: 0,
+  hexTurns: 0,
+  burnTurns: 0,
+  beastTurns: 0,
+  stuck: false,
+  isBeast: false,
 });
 
 window.Entities = { unitDefs, makeBase, makeUnit };
