@@ -36,29 +36,6 @@
     <script defer src="abilities/sludge.js"></script>
     <script defer src="abilities/druid.js"></script>
     <script defer src="game.js"></script>
-    <script>
-      (function() {
-        function setViewportScale(scale) {
-          var meta = document.querySelector('meta[name="viewport"]');
-          if (!meta) return;
-          var s = Math.max(0.5, Math.min(1, scale || 1));
-          meta.setAttribute('content', 'width=device-width, initial-scale=' + s + ', minimum-scale=' + s + ', maximum-scale=1, viewport-fit=cover');
-        }
-        function recalcViewportScale() {
-          var isLandscape = window.matchMedia('(orientation: landscape)').matches;
-          if (!isLandscape) { setViewportScale(1); return; }
-          var main = document.querySelector('.app-main');
-          if (!main) { setViewportScale(1); return; }
-          var W = window.innerWidth || document.documentElement.clientWidth;
-          var layoutW = Math.ceil(main.scrollWidth);
-          var scale = W / layoutW;
-          setViewportScale(scale);
-        }
-        window.addEventListener('orientationchange', recalcViewportScale);
-        window.addEventListener('resize', recalcViewportScale);
-        document.addEventListener('DOMContentLoaded', recalcViewportScale);
-      })();
-    </script>
   </head>
   <body>
     <header class="app-header">
@@ -71,7 +48,7 @@
         <div id="unit-panel" class="panel">
           <div class="panel-title">Unit Details</div>
           <div class="unit-header">
-            <div id="unit-icon" class="unit-icon">—</div>
+            <div id="unit-icon" class="unit-icon">&mdash;</div>
             <div class="unit-info">
               <div id="unit-name" class="unit-name">None selected</div>
               <div id="unit-desc" class="unit-desc">Select a unit to view details.</div>
@@ -98,8 +75,10 @@
         <!-- Multiplayer Controls Moved Below Grid -->
         <div class="multiplayer-footer panel">
           <div class="mp-footer-row">
-            <div class="mp-label">PvP Multiplayer</div>
-            <div id="peer-id-display">ID: Loading...</div>
+            <div class="mp-status-group">
+              <div class="mp-label">PvP Multiplayer</div>
+              <div id="peer-id-display">ID: Loading...</div>
+            </div>
             <div class="mp-join-form">
               <input type="text" id="join-id-input" placeholder="Enter Friend ID">
               <button id="connect-btn" class="btn btn-secondary">Join Match</button>

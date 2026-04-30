@@ -54,6 +54,17 @@ class Game {
     }
   }
 
+  isFriendlyTeam(team) {
+    const localTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
+    return team === localTeam;
+  }
+
+  applyBoardPerspective() {
+    const grid = document.getElementById("grid");
+    if (!grid) return;
+    grid.classList.toggle("board-flipped", this.isMultiplayer && this.playerTeam === Config.TEAM.AI);
+  }
+
   addEntity(ent) {
     if (ent && ent.kind === "unit" && ent.type === "Skeleton") {
       if (!(ent.summonedBy === "Necromancer")) {
@@ -66,13 +77,15 @@ class Game {
   }
 
   renderEntities() {
+    this.applyBoardPerspective();
     this.board.forEachCell(cell => {
       cell.innerHTML = "";
       cell.style.borderColor = "";
       cell.classList.remove(
-        "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","hazard-fire","hazard-sludge",
-        "unit-player","unit-ai","status-hex","token-player","token-ai",
-        "move-hl","attack-hl","ability-hl","attack-range-hl","ability-range-max"
+        "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","terrain-nexus-player","terrain-nexus-ai",
+        "hazard-fire","hazard-sludge","construction-site",
+        "unit-player","unit-ai","status-hex","status-stuck","token-player","token-ai",
+        "move-hl","attack-hl","heal-hl","ability-hl","attack-range-hl","ability-range-max","selected-empty","buy-hl"
       );
     });
     // Terrain tokens
@@ -95,8 +108,9 @@ class Game {
         else if (t === "nexus") {
           cell.classList.add("terrain-nexus");
           const owner = this.nexusOwners[r][c];
+          if (owner != null) cell.classList.add(this.isFriendlyTeam(owner) ? "terrain-nexus-player" : "terrain-nexus-ai");
           const icon = document.createElement("span");
-          icon.className = `nexus-icon ${owner === Config.TEAM.PLAYER ? "nexus-player" : (owner === Config.TEAM.AI ? "nexus-ai" : "nexus-neutral")}`;
+          icon.className = `nexus-icon ${owner == null ? "nexus-neutral" : (this.isFriendlyTeam(owner) ? "nexus-player" : "nexus-ai")}`;
           icon.textContent = "🔷"; // Larger blue diamond shape
           cell.appendChild(icon);
         }
@@ -141,30 +155,25 @@ class Game {
     for (const ent of this.entities) {
       const cell = this.board.getCell(ent.row, ent.col);
       if (!cell) continue;
-      cell.classList.add(ent.team === Config.TEAM.PLAYER ? "unit-player" : "unit-ai");
-      
-      // Visual indicator if unit is on a nexus
-      if (this.terrain[ent.row][ent.col] === "nexus") {
-        cell.classList.add("unit-on-nexus");
-      }
+      cell.classList.add(this.isFriendlyTeam(ent.team) ? "unit-player" : "unit-ai");
 
       const span = document.createElement("span");
-    span.className = `token ${ent.team === Config.TEAM.PLAYER ? "token-player" : "token-ai"}`;
+      span.className = `token ${this.isFriendlyTeam(ent.team) ? "token-player" : "token-ai"}`;
       span.textContent = ent.symbol;
       cell.appendChild(span);
-    if (ent.hexMarked) {
-      const badge = document.createElement("span");
-      badge.className = "status-badge hex-badge";
+      if (ent.hexMarked) {
+        const badge = document.createElement("span");
+        badge.className = "status-badge hex-badge";
       badge.textContent = "✳";
-      cell.appendChild(badge);
-      cell.classList.add("status-hex");
+        cell.appendChild(badge);
+        cell.classList.add("status-hex");
     }
-    if (ent.stuck) {
-      const badge = document.createElement("span");
-      badge.className = "status-badge stuck-badge";
+      if (ent.stuck) {
+        const badge = document.createElement("span");
+        badge.className = "status-badge stuck-badge";
       badge.textContent = "◎";
-      cell.appendChild(badge);
-      cell.classList.add("status-stuck");
+        cell.appendChild(badge);
+        cell.classList.add("status-stuck");
     }
     }
   }
@@ -244,13 +253,17 @@ class Game {
       
       let pLabel = "Player";
       let aLabel = "AI";
+      let pValue = p;
+      let aValue = a;
       if (this.isMultiplayer) {
-        pLabel = (this.playerTeam === Config.TEAM.PLAYER) ? "YOU" : "Enemy";
-        aLabel = (this.playerTeam === Config.TEAM.AI) ? "YOU" : "Enemy";
+        pLabel = "YOU";
+        aLabel = "ENEMY";
+        pValue = this.energy[this.playerTeam];
+        aValue = this.energy[this.playerTeam === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER];
       }
       
-      if (pEl) pEl.textContent = `${pLabel}: ${p}`;
-      if (aEl) aEl.textContent = `${aLabel}: ${a}`;
+      if (pEl) pEl.textContent = `${pLabel}: ${pValue}`;
+      if (aEl) aEl.textContent = `${aLabel}: ${aValue}`;
     }
   }
 
@@ -273,6 +286,8 @@ class Game {
       existingRunes.forEach(el => el.remove());
       const existingTerr = unitPanel.querySelectorAll(".terr-row");
       existingTerr.forEach(el => el.remove());
+      const existingLevel = unitPanel.querySelectorAll(".leveling-panel");
+      existingLevel.forEach(el => el.remove());
     }
 
     if (!ent) {
@@ -305,10 +320,32 @@ class Game {
     const def = Entities.unitDefs[ent.type];
     iconEl.textContent = ent.symbol;
     const teamName = this.isMultiplayer ? (ent.team === this.playerTeam ? "Your" : "Enemy") : (ent.team === Config.TEAM.PLAYER ? "Player" : "AI");
-    nameEl.innerHTML = `${teamName} ${ent.type}`;
+    nameEl.textContent = `${teamName} ${ent.type}`;
     descEl.textContent = def.ability;
 
     if (ent.kind === "unit") {
+      const thresholds = { 1: 6, 2: 12 };
+      const currentLevel = ent.level || 1;
+      const nextLevelXp = thresholds[currentLevel];
+      const nextReward = currentLevel === 1 ? "+1 Damage" : currentLevel === 2 ? "+1 Max HP" : "Fully upgraded";
+
+      const levelingPanel = document.createElement("div");
+      levelingPanel.className = "leveling-panel";
+      levelingPanel.innerHTML = `
+        <div class="leveling-header">
+          <span class="level-chip">Level ${currentLevel}</span>
+          <span class="level-reward">${nextReward}</span>
+        </div>
+        <div class="leveling-copy">Units level up by capturing nexuses and winning fights.</div>
+        <div class="leveling-track">
+          <div class="level-step${currentLevel >= 1 ? " reached" : ""}">Lv1</div>
+          <div class="level-step${currentLevel >= 2 ? " reached" : ""}">Lv2</div>
+          <div class="level-step${currentLevel >= 3 ? " reached" : ""}">Lv3</div>
+        </div>
+        <div class="leveling-progress">${currentLevel >= 3 ? "XP MAXED" : `XP ${ent.exp || 0}/${nextLevelXp}`}</div>
+      `;
+      unitPanel.appendChild(levelingPanel);
+
       // Runes
       const runePanel = document.createElement("div");
       runePanel.className = "rune-panel";

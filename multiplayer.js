@@ -49,6 +49,8 @@ window.Multiplayer = (function() {
       UI.connectBtn.textContent = 'Connected (Host)';
       UI.connectBtn.disabled = true;
       UI.joinInput.style.display = 'none';
+      game.updateHUD();
+      game.renderEntities();
       
       // Send initial state sync (terrain, base positions)
       // We wait for the connection to be fully open before sending
@@ -72,6 +74,8 @@ window.Multiplayer = (function() {
       game.isMultiplayer = true;
       game.playerTeam = Config.TEAM.AI;
       UI.connectBtn.textContent = 'Connecting...';
+      game.updateHUD();
+      game.renderEntities();
     };
   }
 
