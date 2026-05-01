@@ -4,9 +4,21 @@
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Necromancer = {
     hp: 5, range: 2, dmg: 2, move: 2, cost: 4,
-    symbol: "☠️", ability: "Raise 3 skeletons on adjacent tiles",
+    symbol: "☠️", ability: "Unit Control",
     rangePattern: "square", movePattern: "orthogonal",
-    cooldowns: { "Raise Dead": 6 }
+    cooldowns: { "Raise Dead": 6 },
+    leveling: {
+      xpToLevel: { 2: 8, 3: 16 },
+      levels: {
+        2: [
+          { label: "+1 Range", stat: "range", amount: 1 },
+        ],
+        3: [
+          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "Raise Dead cooldown -1", stat: "cooldown", ability: "Raise Dead", amount: -1 },
+        ],
+      },
+    },
   };
   const makeRaiseDead = () => ({
     name: "Raise Dead",
@@ -44,7 +56,7 @@
       }
       if (uniqueTiles.length === 0) return;
       unit.ap = Math.max(0, unit.ap - 1);
-      const baseCd = (Entities.unitDefs.Necromancer.cooldowns && Entities.unitDefs.Necromancer.cooldowns["Raise Dead"]) || 3;
+      const baseCd = game.getAbilityCooldown(unit, "Raise Dead");
       unit.abilityCooldowns["Raise Dead"] = baseCd;
       let placed = 0;
       for (const [r, c] of uniqueTiles.slice(0, 3)) {
@@ -84,7 +96,7 @@
         setTimeout(() => cell.classList.remove("ability-anim"), 500);
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      const baseCd = (Entities.unitDefs.Necromancer.cooldowns && Entities.unitDefs.Necromancer.cooldowns["Raise Dead"]) || 3;
+      const baseCd = game.getAbilityCooldown(unit, "Raise Dead");
       unit.abilityCooldowns["Raise Dead"] = baseCd;
       if (game.playSfx) game.playSfx("ability");
       game.updateUnitPanel(unit);

@@ -3,9 +3,21 @@
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Hex = {
     hp: 5, range: 3, dmg: 2, move: 2, cost: 4,
-    symbol: "🧤", ability: "Marks enemies; marked take +1 damage",
+    symbol: "🧤", ability: "Punish enemies",
     rangePattern: "orthogonal", movePattern: "orthogonal",
-    cooldowns: { "Hex": 3 }
+    cooldowns: { "Hex": 3 },
+    leveling: {
+      xpToLevel: { 2: 7, 3: 14 },
+      levels: {
+        2: [
+          { label: "+1 Range", stat: "range", amount: 1 },
+        ],
+        3: [
+          { label: "+1 Damage", stat: "dmg", amount: 1 },
+          { label: "Hex cooldown -1", stat: "cooldown", ability: "Hex", amount: -1 },
+        ],
+      },
+    },
   };
   const makeHex = () => ({
     name: "Hex",
@@ -35,7 +47,7 @@
         setTimeout(() => cell.classList.remove("ability-anim"), 500);
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      const baseCd = (window.Entities.unitDefs.Hex.cooldowns && window.Entities.unitDefs.Hex.cooldowns["Hex"]) || 2;
+      const baseCd = game.getAbilityCooldown(unit, "Hex");
       unit.abilityCooldowns["Hex"] = baseCd;
       if (game.playSfx) game.playSfx("ability");
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Hex`, ability: "Hex" });

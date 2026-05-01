@@ -5,9 +5,21 @@
   // Druid Definitions
   window.Entities.unitDefs.Druid = {
     hp: 4, range: 2, dmg: 2, move: 3, cost: 4,
-    symbol: "🧙‍♂️", ability: "Shapeshift",
+    symbol: "🧙‍♂️", ability: "Temporary Power",
     rangePattern: "self", movePattern: "orthogonal",
-    cooldowns: { "Shapeshift": 6 }
+    cooldowns: { "Shapeshift": 6 },
+    leveling: {
+      xpToLevel: { 2: 8, 3: 16 },
+      levels: {
+        2: [
+          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+        ],
+        3: [
+          { label: "+1 Damage", stat: "dmg", amount: 1 },
+          { label: "Shapeshift cooldown -1", stat: "cooldown", ability: "Shapeshift", amount: -1 },
+        ],
+      },
+    },
   };
 
   const makeShapeshift = () => ({

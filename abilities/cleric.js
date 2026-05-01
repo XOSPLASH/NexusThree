@@ -3,10 +3,22 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Cleric = {
-    hp: 6, range: 2, dmg: 2, move: 2, cost: 4,
-    symbol: "⚕️", ability: "Mass Heal adjacent allies",
+    hp: 6, range: 2, dmg: 1, move: 2, cost: 4,
+    symbol: "⚕️", ability: "Mass Healing",
     rangePattern: "square", movePattern: "orthogonal",
-    cooldowns: { "Mass Heal": 4 }
+    cooldowns: { "Mass Heal": 4 },
+    leveling: {
+      xpToLevel: { 2: 7, 3: 15 },
+      levels: {
+        2: [
+          { label: "+1 Range", stat: "range", amount: 1 },
+        ],
+        3: [
+          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "Mass Heal cooldown -1", stat: "cooldown", ability: "Mass Heal", amount: -1 },
+        ],
+      },
+    },
   };
   const makeMassHeal = () => ({
     name: "Mass Heal",
@@ -36,7 +48,7 @@
         }
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      const baseCd = (Entities.unitDefs.Cleric.cooldowns && Entities.unitDefs.Cleric.cooldowns["Mass Heal"]) || 2;
+      const baseCd = game.getAbilityCooldown(unit, "Mass Heal");
       unit.abilityCooldowns["Mass Heal"] = baseCd;
       game.playSfx && game.playSfx("heal");
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Cleric`, ability: "Mass Heal", target: `${healed} allies` });

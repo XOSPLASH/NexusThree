@@ -3,35 +3,55 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Archer = {
-    hp: 6, range: 3, dmg: 3, move: 1, cost: 3,
-    symbol: "🏹", ability: "Long range",
+    hp: 5, range: 3, dmg: 2, move: 2, cost: 3,
+    symbol: "🏹", ability: "Piercing marksman",
     rangePattern: "straight", movePattern: "orthogonal",
-    cooldowns: { "Snipe": 2 }
+    cooldowns: { "Snipe": 4 },
+    leveling: {
+      xpToLevel: { 2: 6, 3: 13 },
+      levels: {
+        2: [
+          { label: "+1 Range", stat: "range", amount: 1 },
+        ],
+        3: [
+          { label: "+1 Damage", stat: "dmg", amount: 1 },
+        ],
+      },
+    },
   };
   const makeSnipe = () => ({
     name: "Snipe",
-    desc: "Long shot ignoring walls.",
-    range: 0,
+    desc: "Choose any tile in a straight line up to 4. Shoot through all enemies in that line, stopping at walls. Cooldown 4.",
+    range: 4,
     rangePattern: "straight",
-    damage: 4,
+    damage: 3,
+    piercing: true,
+    piercingLabel: "Hits every enemy on the line",
     requiresTarget: true,
     computeTargets(game, unit) {
-      const tiles = game.getPatternTiles(unit, unit.range + 1, "straight");
-      const res = [];
-      for (const [r, c] of tiles) {
-        const occ = game.occupants[r][c];
-        if (occ && occ.team !== unit.team) res.push([r, c]);
-      }
-      return res;
+      return game.getSnipeTargets(unit);
     },
     perform(game, unit, r, c) {
-      const target = game.occupants[r][c];
-      if (!target) return;
-      game.applyDamage(target, 4, unit);
+      const dr = Math.sign(r - unit.row);
+      const dc = Math.sign(c - unit.col);
+      if (!((dr === 0 && dc !== 0) || (dc === 0 && dr !== 0))) return;
+      let rr = unit.row + dr;
+      let cc = unit.col + dc;
+      while (game.inBounds(rr, cc)) {
+        const terr = game.terrain[rr][cc];
+        if (terr === "wall" || terr === "water" || terr === "fortwall") break;
+        const occ = game.occupants[rr][cc];
+        if (occ && occ.team !== unit.team) {
+          game.applyDamage(occ, 3, unit);
+        }
+        if (rr === r && cc === c) break;
+        rr += dr;
+        cc += dc;
+      }
       unit.ap = Math.max(0, unit.ap - 1);
-      const baseCd = (Entities.unitDefs.Archer.cooldowns && Entities.unitDefs.Archer.cooldowns["Snipe"]) || 2;
+      const baseCd = game.getAbilityCooldown(unit, "Snipe");
       unit.abilityCooldowns["Snipe"] = baseCd;
-      game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Archer`, ability: "Snipe", target: `${target.team === "P" ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
+      game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Archer`, ability: "Snipe", msg: "Piercing line shot" });
     },
   });
   window.Abilities.Archer = [makeSnipe()];

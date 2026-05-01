@@ -3,10 +3,22 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Rogue = {
-    hp: 5, range: 1, dmg: 4, move: 2, cost: 3,
-    symbol: "🗡️", ability: "Shadow Strike (Teleport + Dmg)",
+    hp: 5, range: 1, dmg: 4, move: 3, cost: 3,
+    symbol: "🗡️", ability: "Classic Assasin",
     rangePattern: "orthogonal", movePattern: "orthogonal",
-    cooldowns: { "Shadow Strike": 3 }
+    cooldowns: { "Shadow Strike": 3 },
+    leveling: {
+      xpToLevel: { 2: 6, 3: 13 },
+      levels: {
+        2: [
+          { label: "+1 Move", stat: "move", amount: 1 },
+        ],
+        3: [
+          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "Shadow Strike cooldown -1", stat: "cooldown", ability: "Shadow Strike", amount: -1 },
+        ],
+      },
+    },
   };
   const makeShadowStrike = () => ({
     name: "Shadow Strike",
@@ -88,7 +100,7 @@
       }
       
       unit.ap = Math.max(0, unit.ap - 1);
-      const baseCd = (Entities.unitDefs.Rogue.cooldowns && Entities.unitDefs.Rogue.cooldowns["Shadow Strike"]) || 2;
+      const baseCd = game.getAbilityCooldown(unit, "Shadow Strike");
       unit.abilityCooldowns["Shadow Strike"] = baseCd;
     },
   });

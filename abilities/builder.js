@@ -3,10 +3,22 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Builder = {
-    hp: 5, range: 2, dmg: 2, move: 2, cost: 2,
-    symbol: "🛠️", ability: "Construct",
+    hp: 5, range: 1, dmg: 1, move: 2, cost: 2,
+    symbol: "🛠️", ability: "Terrain transformation",
     rangePattern: "orthogonal", movePattern: "orthogonal",
-    cooldowns: { "Construct": 1 }
+    cooldowns: { "Construct": 1 },
+    leveling: {
+      xpToLevel: { 2: 5, 3: 10 },
+      levels: {
+        2: [
+          { label: "+1 Move", stat: "move", amount: 1 },
+        ],
+        3: [
+          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "+1 Range", stat: "range", amount: 1 },
+        ],
+      },
+    },
   };
 
   const makeConstruct = () => ({
@@ -42,7 +54,7 @@
       if (!game.abilityMode || !game.abilityMode.constructRemaining) {
         game.abilityMode = { unit, def: this, constructRemaining: 5 };
         unit.ap = Math.max(0, unit.ap - 1);
-        unit.abilityCooldowns["Construct"] = 1;
+      unit.abilityCooldowns["Construct"] = game.getAbilityCooldown(unit, "Construct");
       }
 
       const terr = game.terrain[r][c];

@@ -3,31 +3,59 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Warrior = {
-    hp: 6, range: 1, dmg: 3, move: 2, cost: 2,
-    symbol: "⚔️", ability: "Tough melee",
+    hp: 7, range: 1, dmg: 2, move: 2, cost: 2,
+    symbol: "⚔️", ability: "Piercing frontline strike",
     rangePattern: "orthogonal", movePattern: "orthogonal",
-    cooldowns: { "Charge": 2 }
+    cooldowns: { "Charge": 3 },
+    leveling: {
+      xpToLevel: { 2: 5, 3: 11 },
+      levels: {
+        2: [
+          { label: "+1 Damage", stat: "dmg", amount: 1 },
+        ],
+        3: [
+          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "+1 Move", stat: "move", amount: 1 },
+        ],
+      },
+    },
   };
   const makeCharge = () => ({
     name: "Charge",
-    desc: "Dash 2 tiles and strike an adjacent enemy.",
-    range: 2,
+    desc: "Choose any tile in a straight line up to 3. Hit every enemy in that line, then dash to the last open tile before the block. Cooldown 3.",
+    range: 3,
     rangePattern: "straight",
-    damage: 4,
+    damage: 2,
+    piercing: true,
+    piercingLabel: "Damages every enemy on the line",
     requiresTarget: true,
     computeTargets(game, unit) { return game.getChargeTargets(unit); },
     perform(game, unit, r, c) {
-      game.moveUnit(unit, r, c);
-      const adj = game.getAdjacentEnemyTiles(unit);
-      if (adj.length) {
-        const [rr, cc] = adj[0];
-        const t = game.occupants[rr][cc];
-        if (t) game.applyDamage(t, 2, unit);
+      const dr = Math.sign(r - unit.row);
+      const dc = Math.sign(c - unit.col);
+      if (!((dr === 0 && dc !== 0) || (dc === 0 && dr !== 0))) return;
+      let lastOpen = null;
+      let blockedByUnit = false;
+      let rr = unit.row + dr;
+      let cc = unit.col + dc;
+      while (game.inBounds(rr, cc)) {
+        const terr = game.terrain[rr][cc];
+        if (terr === "wall" || terr === "water" || terr === "fortwall") break;
+        const occ = game.occupants[rr][cc];
+        if (occ && occ.team !== unit.team) {
+          game.applyDamage(occ, 2, unit);
+        }
+        if (!occ && !blockedByUnit) lastOpen = [rr, cc];
+        if (occ) blockedByUnit = true;
+        if (rr === r && cc === c) break;
+        rr += dr;
+        cc += dc;
       }
+      if (lastOpen) game.moveUnit(unit, lastOpen[0], lastOpen[1], { dash: true });
       unit.ap = Math.max(0, unit.ap - 1);
-      const baseCd = (Entities.unitDefs.Warrior.cooldowns && Entities.unitDefs.Warrior.cooldowns["Charge"]) || 2;
+      const baseCd = game.getAbilityCooldown(unit, "Charge");
       unit.abilityCooldowns["Charge"] = baseCd;
-      game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Warrior`, ability: "Charge" });
+      game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Warrior`, ability: "Charge", msg: "Piercing line strike" });
     },
   });
   window.Abilities.Warrior = [makeCharge()];

@@ -2,10 +2,22 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Sludge = {
-    hp: 5, range: 2, dmg: 1, move: 2, cost: 5,
-    symbol: "🫧", ability: "Creates a 3x3 trap that prevents escape",
+    hp: 6, range: 2, dmg: 1, move: 2, cost: 5,
+    symbol: "🫧", ability: "Prevent Entry",
     rangePattern: "select", movePattern: "orthogonal",
-    cooldowns: { "Quagmire": 5 }
+    cooldowns: { "Quagmire": 5 },
+    leveling: {
+      xpToLevel: { 2: 8, 3: 16 },
+      levels: {
+        2: [
+          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+        ],
+        3: [
+          { label: "+1 Move", stat: "move", amount: 1 },
+          { label: "Quagmire cooldown -1", stat: "cooldown", ability: "Quagmire", amount: -1 },
+        ],
+      },
+    },
   };
   const makeQuagmire = () => ({
     name: "Quagmire",
@@ -27,7 +39,7 @@
         }
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      const baseCd = (window.Entities.unitDefs.Sludge.cooldowns && window.Entities.unitDefs.Sludge.cooldowns["Quagmire"]) || 3;
+      const baseCd = game.getAbilityCooldown(unit, "Quagmire");
       unit.abilityCooldowns["Quagmire"] = baseCd;
       if (game.syncSludgeStatuses) game.syncSludgeStatuses();
       game.renderEntities();

@@ -3,10 +3,21 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Magnet = {
-    hp: 8, range: 1, dmg: 4, move: 2, cost: 5,
-    symbol: "🧲", ability: "Pull units toward self",
+    hp: 8, range: 1, dmg: 3, move: 2, cost: 5,
+    symbol: "🧲", ability: "Displacement",
     rangePattern: "square", movePattern: "orthogonal",
-    cooldowns: { "Pull": 2 }
+    cooldowns: { "Pull": 2 },
+    leveling: {
+      xpToLevel: { 2: 8, 3: 16 },
+      levels: {
+        2: [
+          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+        ],
+        3: [
+          { label: "+1 Range", stat: "range", amount: 1 },
+        ],
+      },
+    },
   };
   const makePull = () => ({
     name: "Pull",
@@ -47,7 +58,7 @@
         }
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      const baseCd = (Entities.unitDefs.Magnet.cooldowns && Entities.unitDefs.Magnet.cooldowns["Pull"]) || 2;
+      const baseCd = game.getAbilityCooldown(unit, "Pull");
       unit.abilityCooldowns["Pull"] = baseCd;
       if (game.playSfx) game.playSfx("ability");
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Magnet`, ability: "Pull" });

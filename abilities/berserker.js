@@ -3,10 +3,22 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Berserker = {
-    hp: 7, range: 2, dmg: 3, move: 3, cost: 3,
-    symbol: "🪓", ability: "Whirlwind attack",
+    hp: 7, range: 1, dmg: 3, move: 3, cost: 3,
+    symbol: "🪓", ability: "Melee Area Control",
     rangePattern: "orthogonal", movePattern: "orthogonal",
-    cooldowns: { "Whirlwind": 4 }
+    cooldowns: { "Whirlwind": 4 },
+    leveling: {
+      xpToLevel: { 2: 6, 3: 13 },
+      levels: {
+        2: [
+          { label: "+1 Damage", stat: "dmg", amount: 1 },
+        ],
+        3: [
+          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "+1 Move", stat: "move", amount: 1 },
+        ],
+      },
+    },
   };
   const makeWhirlwind = () => ({
     name: "Whirlwind",
@@ -24,7 +36,7 @@
           if (t) game.applyDamage(t, 3, unit);
         }
         unit.ap = Math.max(0, unit.ap - 1);
-        const baseCd = (Entities.unitDefs.Berserker.cooldowns && Entities.unitDefs.Berserker.cooldowns["Whirlwind"]) || 2;
+        const baseCd = game.getAbilityCooldown(unit, "Whirlwind");
         unit.abilityCooldowns["Whirlwind"] = baseCd;
         game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Berserker`, ability: "Whirlwind" });
       }

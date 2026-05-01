@@ -84,6 +84,17 @@ class Game {
     return cooldown === 0;
   }
 
+  cancelAbilityMode() {
+    this.abilityMode = null;
+    this.board.clearMarks();
+    this.renderEntities();
+    this.updateHUD();
+    this.updateUnitPanel(this.selected && this.entities.includes(this.selected) ? this.selected : null);
+    if (this.selected && this.selected.kind === "unit" && this.entities.includes(this.selected)) {
+      this.showActionHints(this.selected);
+    }
+  }
+
   addEntity(ent) {
     if (ent && ent.kind === "unit" && ent.type === "Skeleton") {
       if (!(ent.summonedBy === "Necromancer")) {
@@ -288,6 +299,12 @@ class Game {
       if (pEl) pEl.textContent = `${pLabel}: ${pValue}`;
       if (aEl) aEl.textContent = `${aLabel}: ${aValue}`;
     }
+    const cancelBtn = document.getElementById("cancel-ability-btn");
+    if (cancelBtn) {
+      const active = !!this.abilityMode;
+      cancelBtn.style.display = active ? "inline-block" : "none";
+      cancelBtn.onclick = active ? () => this.cancelAbilityMode() : null;
+    }
   }
 
   getHazardDescriptor(hazard) {
@@ -398,6 +415,51 @@ class Game {
     setTimeout(() => document.addEventListener("click", onDocClick, true), 0);
   }
 
+  getUnitLevelingProfile(unitOrType) {
+    const type = typeof unitOrType === "string" ? unitOrType : unitOrType && unitOrType.type;
+    return (window.Entities && window.Entities.getLevelingProfile && window.Entities.getLevelingProfile(type)) || {
+      xpToLevel: { 2: 6, 3: 12 },
+      levels: { 2: [], 3: [] },
+    };
+  }
+
+  getLevelXpFor(unitOrType, level) {
+    const profile = this.getUnitLevelingProfile(unitOrType);
+    return (profile && profile.xpToLevel && profile.xpToLevel[level]) || null;
+  }
+
+  getLevelUpLabels(unitOrType, level) {
+    const profile = this.getUnitLevelingProfile(unitOrType);
+    const bonuses = (profile.levels && profile.levels[level]) || [];
+    return bonuses.map(b => b.label).filter(Boolean);
+  }
+
+  getAbilityCooldown(unit, abilityName) {
+    const def = window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[unit && unit.type];
+    const base = (def && def.cooldowns && def.cooldowns[abilityName]) || 2;
+    const mod = (unit && unit.cooldownMods && unit.cooldownMods[abilityName] || 0) + (unit && unit.globalCooldownMod || 0);
+    return Math.max(0, base + mod);
+  }
+
+  getAbilityDetailLines(unit, def) {
+    const cooldown = this.getAbilityCooldown(unit, def.name);
+    const range = typeof def.range === "number" ? def.range : unit.range;
+    const lines = [];
+    lines.push(["Cooldown", `${cooldown} turn${cooldown === 1 ? "" : "s"}`]);
+    if (typeof def.damage === "number") lines.push(["Damage", `${def.damage}`]);
+    if (typeof def.heal === "number") lines.push(["Heal", `${def.heal}`]);
+    if (typeof def.duration === "number") lines.push(["Duration", `${def.duration} turn${def.duration === 1 ? "" : "s"}`]);
+    if (def.requiresTarget !== false && typeof range === "number") lines.push(["Range", `${range}`]);
+    if (def.rangePattern) lines.push(["Pattern", this.formatPatternLabel(def.rangePattern)]);
+    if (def.piercing) lines.push(["Piercing", def.piercingLabel || "Hits each unit in the line"]);
+    if (def.affectsAll) lines.push(["Area", def.area || "All units in the target area"]);
+    else if (def.multiSelect) lines.push(["Targets", `Choose up to ${def.maxTargets || 1}`]);
+    else if (def.requiresTarget) lines.push(["Targets", "Single target tile"]);
+    else lines.push(["Targets", "Self"]);
+    if (def.note) lines.push(["Note", def.note]);
+    return lines;
+  }
+
   updateUnitPanel(ent) {
     const iconEl = document.getElementById("unit-icon");
     const nameEl = document.getElementById("unit-name");
@@ -466,10 +528,30 @@ class Game {
     descEl.textContent = def.ability;
 
     if (ent.kind === "unit") {
-      const thresholds = { 1: 6, 2: 12 };
-      const currentLevel = ent.level || 1;
-      const nextLevelXp = thresholds[currentLevel];
-      const nextReward = currentLevel === 1 ? "+1 Damage" : currentLevel === 2 ? "+1 Max HP" : "Fully upgraded";
+      const profile = this.getUnitLevelingProfile(ent);
+      const currentLevel = Math.max(1, Math.min(3, ent.level || 1));
+      const currentXp = ent.exp || 0;
+      const nextLevel = currentLevel < 3 ? currentLevel + 1 : 3;
+      const nextLevelXp = currentLevel < 3 ? this.getLevelXpFor(ent, nextLevel) : null;
+      const prevLevelXp = currentLevel > 1 ? this.getLevelXpFor(ent, currentLevel) : 0;
+      const progressStart = currentLevel > 1 ? (prevLevelXp || 0) : 0;
+      const progressEnd = nextLevelXp || progressStart || 1;
+      const progressPct = currentLevel >= 3 ? 100 : Math.max(0, Math.min(100, ((currentXp - progressStart) / Math.max(1, progressEnd - progressStart)) * 100));
+      const nextReward = currentLevel >= 3 ? "Fully upgraded" : `Next: Lv${nextLevel}`;
+      const levelCards = [2, 3].map((level) => {
+        const reached = currentLevel >= level;
+        const xp = this.getLevelXpFor(ent, level);
+        const labels = this.getLevelUpLabels(ent, level);
+        return `
+          <div class="level-branch${reached ? " reached" : ""}">
+            <div class="level-branch-head">
+              <span class="level-chip">Lv${level}</span>
+              <span class="level-xp-tag">${xp != null ? `${xp} XP` : "Max"}</span>
+            </div>
+            <div class="level-branch-body">${labels.length ? labels.join("<br>") : "No stat changes"}</div>
+          </div>
+        `;
+      }).join("");
 
       const levelingWrap = document.createElement("div");
       levelingWrap.className = "details-section detail-dynamic";
@@ -483,13 +565,17 @@ class Game {
           <span class="level-chip">Level ${currentLevel}</span>
           <span class="level-reward">${nextReward}</span>
         </div>
-        <div class="leveling-copy">Units level up by capturing nexuses and winning fights.</div>
+        <div class="leveling-copy">XP grows from combat, kills, and objective pressure. Each unit has its own stat curve and upgrade pacing.</div>
+        <div class="leveling-progress-wrap">
+          <div class="leveling-progress-bar"><div class="leveling-progress-fill" style="width:${progressPct}%"></div></div>
+          <div class="leveling-progress-meta">${currentLevel >= 3 ? "XP MAXED" : `XP ${currentXp}/${nextLevelXp}`}</div>
+        </div>
         <div class="leveling-track">
           <div class="level-step${currentLevel >= 1 ? " reached" : ""}">Lv1</div>
           <div class="level-step${currentLevel >= 2 ? " reached" : ""}">Lv2</div>
           <div class="level-step${currentLevel >= 3 ? " reached" : ""}">Lv3</div>
         </div>
-        <div class="leveling-progress">${currentLevel >= 3 ? "XP MAXED" : `XP ${ent.exp || 0}/${nextLevelXp}`}</div>
+        <div class="level-branch-grid">${levelCards}</div>
       `;
       levelingWrap.appendChild(levelingLabel);
       levelingWrap.appendChild(levelingPanel);
@@ -610,6 +696,7 @@ class Game {
       const cd = (ent.abilityCooldowns && ent.abilityCooldowns[a.name]) || 0;
       const isMyTeam = this.isMultiplayer ? (ent.team === this.playerTeam) : (ent.team === Config.TEAM.PLAYER);
       const canUse = isMyTeam && this.canActivateAbility(ent, a);
+      const detailLines = this.getAbilityDetailLines(ent, a);
 
       li.innerHTML = `
         <div class="unit-name" style="display:flex; justify-content:space-between;">
@@ -617,8 +704,12 @@ class Game {
           ${cd > 0 ? `<span class="status-badge">CD: ${cd}</span>` : ""}
         </div>
         <div class="unit-desc">${a.desc}</div>
-        <div class="info" style="margin-top:8px; font-size:11px;">Range: ${a.range || ent.range} | Pattern: ${a.rangePattern || "Radius"}</div>
+        <div class="ability-meta" style="margin-top:8px; display:grid; gap:4px; font-size:11px;"></div>
       `;
+      const metaWrap = li.querySelector(".ability-meta");
+      if (metaWrap) {
+        metaWrap.innerHTML = detailLines.map(([k, v]) => `<div class="ability-meta-row"><span class="ability-meta-key">${k}</span><span class="ability-meta-value">${v}</span></div>`).join("");
+      }
 
       if (canUse) {
           li.onclick = () => {
@@ -639,6 +730,7 @@ class Game {
             this.abilityMode = { unit: ent, def: a };
             if (a.requiresTarget) {
               this.showAbilityHints(ent, a);
+              this.updateHUD();
             } else {
               const fromR = ent.row, fromC = ent.col;
               a.perform(this, ent);
@@ -929,31 +1021,28 @@ class Game {
     if (def.multiSelect) this.abilityMode.selectedTiles = [];
   }
 
-  getChargeTargets(unit) {
+  getPiercingLineTargets(unit, range) {
     const res = [];
     const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
     for (const [dr, dc] of dirs) {
-      let r = unit.row, c = unit.col;
-      for (let step = 0; step < 2; step++) {
-        r += dr; c += dc;
+      for (let step = 1; step <= range; step++) {
+        const r = unit.row + dr * step, c = unit.col + dc * step;
         if (!this.inBounds(r, c)) break;
         const terr = this.terrain[r][c];
-        if (terr === "wall" || terr === "water") break;
-        if (this.occupants[r][c] != null) break;
+        if (terr === "wall" || terr === "water" || terr === "fortwall") break;
         res.push([r, c]);
       }
     }
     return res;
   }
 
+  getChargeTargets(unit) {
+    return this.getPiercingLineTargets(unit, 3);
+  }
+
   getSnipeTargets(unit) {
-    const res = [];
-    for (const ent of this.entities) {
-      if (ent.team === unit.team) continue;
-      const dist = this.distanceByPattern(unit, ent.row - unit.row, ent.col - unit.col);
-      if (dist <= unit.range + 1) res.push([ent.row, ent.col]);
-    }
-    return res;
+    const abilityRange = (window.Abilities && window.Abilities.Archer && window.Abilities.Archer[0] && window.Abilities.Archer[0].range) || unit.range;
+    return this.getPiercingLineTargets(unit, abilityRange);
   }
 
   getSmiteTargets(unit) {
@@ -1198,6 +1287,7 @@ class Game {
     this.abilityMode = null;
     this.board.clearMarks();
     this.updateUnitPanel(null);
+    this.updateHUD();
   }
 
   moveUnit(unit, r, c, opt) {
@@ -1306,6 +1396,14 @@ class Game {
     if (this.playSfx) this.playSfx("transform");
   }
 
+  revertSiegeMode(unit) {
+    if (!unit || !unit.siegeOriginalStats) return;
+    Object.assign(unit, unit.siegeOriginalStats);
+    delete unit.siegeOriginalStats;
+    unit.siegeTurns = 0;
+    this.logEvent({ type: "status", msg: `${unit.team === "P" ? "Player" : "AI"} Ballista redeployed.` });
+  }
+
   syncSludgeStatuses() {
     for (const ent of this.entities) {
       if (ent.kind !== "unit") continue;
@@ -1339,6 +1437,13 @@ class Game {
         ent.beastTurns -= 1;
         if (ent.beastTurns <= 0) this.revertBeastForm(ent);
       }
+      if (ent.siegeTurns && ent.siegeTurns > 0) {
+        ent.siegeTurns -= 1;
+        if (ent.siegeTurns <= 0) this.revertSiegeMode(ent);
+      }
+      if (ent.guardTurns && ent.guardTurns > 0) {
+        ent.guardTurns -= 1;
+      }
     }
   }
 
@@ -1357,6 +1462,9 @@ class Game {
     const bonus = (target.hexMarked ? 1 : 0);
     const abilityBonus = (source && source.kind === "unit" && this.abilityMode && this.abilityMode.unit === source) ? ((source.level || 1) - 1) : 0;
     let effectiveDmg = dmg + bonus + abilityBonus;
+    if (target.kind === "unit" && (target.guardTurns || 0) > 0) {
+      effectiveDmg = Math.max(1, effectiveDmg - 1);
+    }
     if (target.kind === "unit" && target.isBeast) {
         effectiveDmg = Math.max(1, Math.floor(effectiveDmg * 0.8));
     }
@@ -1502,6 +1610,28 @@ class Game {
             this.animateAbilityCast(u, def, u.row, u.col);
             await this.delay(360);
             continue;
+          }
+        }
+        if (u.type === "Sentinel" && ((u.abilityCooldowns["Fortify"] || 0) === 0)) {
+          const def = this.getAbilityDefForUnit(u);
+          const enemiesNearby = playerUnits.some(p => Math.max(Math.abs(p.row - u.row), Math.abs(p.col - u.col)) <= 2);
+          if (def && (u.hp <= Math.ceil(u.maxHp * 0.75) || enemiesNearby)) {
+            def.perform(this, u);
+            this.animateAbilityCast(u, def, u.row, u.col);
+            await this.delay(300);
+            continue;
+          }
+        }
+        if (u.type === "Ballista" && ((u.abilityCooldowns["Set Up"] || 0) === 0) && (u.siegeTurns || 0) === 0) {
+          const def = this.getAbilityDefForUnit(u);
+          if (def) {
+            const distToFocus = focus ? Math.abs(focus.row - u.row) + Math.abs(focus.col - u.col) : 0;
+            if (distToFocus > u.range || playerUnits.some(p => Math.abs(p.row - u.row) + Math.abs(p.col - u.col) > u.range)) {
+              def.perform(this, u);
+              this.animateAbilityCast(u, def, u.row, u.col);
+              await this.delay(300);
+              continue;
+            }
           }
         }
         if (u.type === "Avenger" && ((u.abilityCooldowns["Vengeance"] || 0) === 0) && ((this.teamDeaths && this.teamDeaths[u.team]) || 0) > 0) {
@@ -1653,20 +1783,23 @@ class Game {
             if (def) {
               const targets = def.computeTargets(this, u);
               let bestTarget = null;
-              let maxEnemies = 0;
+              let bestScore = -Infinity;
               for (const [r, c] of targets) {
-                let enemies = 0;
+                let score = 0;
                 for (let dr = -1; dr <= 1; dr++) {
                   for (let dc = -1; dc <= 1; dc++) {
                     const rr = r + dr, cc = c + dc;
                     if (!this.inBounds(rr, cc)) continue;
                     const occ = this.occupants[rr][cc];
-                    if (occ && occ.kind === "unit" && occ.team !== u.team) enemies++;
+                    if (occ) {
+                      if (occ.team !== u.team) score += occ.kind === "base" ? 4 : 2;
+                      else score -= 3;
+                    }
                   }
                 }
-                if (enemies > maxEnemies) { maxEnemies = enemies; bestTarget = [r, c]; }
+                if (score > bestScore) { bestScore = score; bestTarget = [r, c]; }
               }
-              if (bestTarget && maxEnemies > 0) {
+              if (bestTarget && bestScore > 0) {
                 def.perform(this, u, bestTarget[0], bestTarget[1]);
                 this.animateAbilityCast(u, def, bestTarget[0], bestTarget[1]);
                 this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Ignite", target: `(${bestTarget[0]}, ${bestTarget[1]})` });
@@ -1739,18 +1872,33 @@ class Game {
             const def = this.getAbilityDefForUnit(u);
             const snipes = this.getSnipeTargets(u);
             if (def && snipes.length) {
-              snipes.sort((a, b) => {
-                const ta = this.occupants[a[0]][a[1]];
-                const tb = this.occupants[b[0]][b[1]];
-                const sa = (ta.kind === "base" ? 100 : 0) + (ta.maxHp - ta.hp);
-                const sb = (tb.kind === "base" ? 100 : 0) + (tb.maxHp - tb.hp);
-                return sb - sa;
-              });
-              const [tr, tc] = snipes[0];
-              const target = this.occupants[tr][tc];
-              def.perform(this, u, tr, tc);
-              this.animateAbilityCast(u, def, tr, tc);
-              this.logEvent({ type: "ability", caster: `AI Archer`, ability: "Snipe", target: `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` });
+              const scored = snipes.map(([tr, tc]) => {
+                let score = 0;
+                const dr = Math.sign(tr - u.row);
+                const dc = Math.sign(tc - u.col);
+                let rr = u.row + dr;
+                let cc = u.col + dc;
+                while (this.inBounds(rr, cc)) {
+                  const terr = this.terrain[rr][cc];
+                  if (terr === "wall" || terr === "water" || terr === "fortwall") break;
+                  const occ = this.occupants[rr][cc];
+                  if (occ && occ.team !== u.team) {
+                    score += occ.kind === "base" ? 20 : 3 + (occ.maxHp - occ.hp);
+                  } else if (occ && occ.team === u.team) {
+                    score -= 2;
+                  }
+                  if (rr === tr && cc === tc) break;
+                  rr += dr;
+                  cc += dc;
+                }
+                return { tr, tc, score };
+              }).sort((a, b) => b.score - a.score);
+              const best = scored[0];
+              if (!best || best.score <= 0) continue;
+              const target = this.occupants[best.tr][best.tc];
+              def.perform(this, u, best.tr, best.tc);
+              this.animateAbilityCast(u, def, best.tr, best.tc);
+              this.logEvent({ type: "ability", caster: `AI Archer`, ability: "Snipe", target: target ? `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.kind === "unit" ? target.type : "Base"}` : `Line (${best.tr}, ${best.tc})` });
               await this.delay(300);
               continue;
             }
@@ -1759,10 +1907,28 @@ class Game {
             const def = this.getAbilityDefForUnit(u);
             const charges = this.getChargeTargets(u);
             if (def && charges.length) {
-              const best = charges
-                .map(([r, c]) => ({ r, c, d: Math.abs(focus.row - r) + Math.abs(focus.col - c) }))
-                .sort((a, b) => a.d - b.d)[0];
-              if (best) {
+              const best = charges.map(([r, c]) => {
+                let score = 0;
+                const dr = Math.sign(r - u.row);
+                const dc = Math.sign(c - u.col);
+                let rr = u.row + dr;
+                let cc = u.col + dc;
+                while (this.inBounds(rr, cc)) {
+                  const terr = this.terrain[rr][cc];
+                  if (terr === "wall" || terr === "water" || terr === "fortwall") break;
+                  const occ = this.occupants[rr][cc];
+                  if (occ && occ.kind === "unit") {
+                    if (occ.team !== u.team) score += 3 + (occ.maxHp - occ.hp);
+                    else score -= 2;
+                  }
+                  if (rr === r && cc === c) break;
+                  rr += dr;
+                  cc += dc;
+                }
+                score -= (Math.abs(focus.row - r) + Math.abs(focus.col - c)) * 0.1;
+                return { r, c, score };
+              }).sort((a, b) => b.score - a.score)[0];
+              if (best && best.score > -Infinity) {
                 def.perform(this, u, best.r, best.c);
                 this.animateAbilityCast(u, def, best.r, best.c);
                 this.logEvent({ type: "ability", caster: `AI Warrior`, ability: "Charge" });
@@ -2033,7 +2199,8 @@ class Game {
           : "";
         msgSpan.innerHTML = `${e.attacker} attacked ${e.target} for ${e.dmg} damage.${also}`;
       } else if (e.type === "ability") {
-        msgSpan.innerHTML = `${e.caster} used ${e.ability}${e.target ? ` on ${e.target}` : ""}.`;
+        const extra = e.msg ? ` (${e.msg})` : "";
+        msgSpan.innerHTML = `${e.caster} used ${e.ability}${extra}${e.target ? ` on ${e.target}` : ""}.`;
       } else if (e.type === "death") {
         msgSpan.innerHTML = `${e.killer} killed ${e.victim}.`;
       } else if (e.type === "status") {
@@ -2314,6 +2481,16 @@ Game.prototype.animateAbilityCast = function(unit, def, r, c) {
     this.spawnBurstFx(target.row, target.col, "fx-build", 620);
     return;
   }
+  if (name === "Fortify") {
+    this.spawnBurstFx(unit.row, unit.col, "fx-healwave", 560);
+    this.createParticles(unit.row, unit.col, "#60a5fa");
+    return;
+  }
+  if (name === "Set Up") {
+    this.spawnBurstFx(unit.row, unit.col, "fx-build", 560);
+    this.createParticles(unit.row, unit.col, "#f59e0b");
+    return;
+  }
   this.spawnBurstFx(target.row, target.col, "fx-impact", 360);
 };
 
@@ -2553,6 +2730,9 @@ Game.prototype.scoreAIRune = function(unit, rune) {
   if (rune.id === "rune_move") score += unit.range <= 2 ? 7 : 4;
   if (rune.id === "rune_range") score += unit.range >= 2 ? 8 : 3;
   if (rune.id === "rune_ap") score += unit.apMax <= 2 ? 9 : 5;
+  if (rune.id === "rune_rampart") score += unit.maxHp <= 7 ? 9 : 5;
+  if (rune.id === "rune_deft") score += (unit.range <= 2 || unit.dmg <= 2) ? 8 : 4;
+  if (rune.id === "rune_focus") score += (window.Abilities && window.Abilities[unit.type] && window.Abilities[unit.type].length) ? 9 : 2;
   if (unit.type === "Cleric" || unit.type === "Mage" || unit.type === "Hex") {
     if (rune.id === "rune_range") score += 4;
   }
@@ -2560,6 +2740,10 @@ Game.prototype.scoreAIRune = function(unit, rune) {
     if (rune.id === "rune_move" || rune.id === "rune_dmg") score += 4;
   }
   if (unit.type === "Druid" && rune.id === "rune_hp") score += 5;
+  if (unit.type === "Sentinel" && rune.id === "rune_rampart") score += 5;
+  if (unit.type === "Sentinel" && rune.id === "rune_deft") score += 2;
+  if (unit.type === "Ballista" && rune.id === "rune_range") score += 5;
+  if (unit.type === "Ballista" && rune.id === "rune_dmg") score += 4;
   return score - (rune.cost * 0.35);
 };
 
@@ -2580,19 +2764,64 @@ Game.prototype.chooseBestAIRunePurchase = function() {
   }
   return best && best.score > 0 ? best : null;
 };
+
+Game.prototype.applyUnitLevelUp = function(unit, level) {
+  const profile = this.getUnitLevelingProfile(unit);
+  const bonuses = (profile.levels && profile.levels[level]) || [];
+  const applied = [];
+  unit.cooldownMods = unit.cooldownMods || {};
+  for (const bonus of bonuses) {
+    if (!bonus || !bonus.stat) continue;
+    const amount = typeof bonus.amount === "number" ? bonus.amount : 0;
+    switch (bonus.stat) {
+      case "dmg":
+        unit.dmg += amount;
+        break;
+      case "range":
+        unit.range += amount;
+        break;
+      case "move":
+        unit.move += amount;
+        break;
+      case "apMax":
+        unit.apMax += amount;
+        unit.ap = Math.min(unit.apMax, unit.ap + Math.max(0, amount));
+        break;
+      case "hp":
+        unit.hp = Math.min(unit.maxHp, unit.hp + amount);
+        break;
+      case "maxHp":
+        unit.maxHp += amount;
+        unit.hp = Math.min(unit.maxHp, unit.hp + (bonus.heal != null ? bonus.heal : amount));
+        break;
+      case "cooldown":
+        if (bonus.ability) {
+          unit.cooldownMods[bonus.ability] = (unit.cooldownMods[bonus.ability] || 0) + amount;
+        }
+        break;
+      default:
+        break;
+    }
+    if (bonus.label) applied.push(bonus.label);
+  }
+  if (unit.hp > unit.maxHp) unit.hp = unit.maxHp;
+  return applied;
+};
  
 Game.prototype.awardExp = function(unit, amount, targetOpt) {
   if (!unit || unit.kind !== "unit") return;
   if (unit.level >= 3) return;
   const scaled = Math.max(0, amount);
   unit.exp += scaled;
-  const thresholds = { 1: 6, 2: 12 };
-  while (unit.level < 3 && unit.exp >= thresholds[unit.level]) {
+  const profile = this.getUnitLevelingProfile(unit);
+  while (unit.level < 3 && unit.exp >= ((profile.xpToLevel && profile.xpToLevel[unit.level + 1]) || Infinity)) {
     unit.level += 1;
-    if (unit.level === 2) { unit.dmg += 1; unit.levelDamageBonus = (unit.levelDamageBonus || 0) + 1; }
-    if (unit.level === 3) { unit.maxHp += 1; unit.hp = Math.min(unit.maxHp, unit.hp + 1); }
+    const labels = this.applyUnitLevelUp(unit, unit.level);
     this.playSfx && this.playSfx("heal");
-    this.logEvent({ type: "level", msg: `${unit.team === "P" ? "Player" : "AI"} ${unit.type} reached Level ${unit.level}` });
+    this.logEvent({
+      type: "level",
+      msg: `${unit.team === "P" ? "Player" : "AI"} ${unit.type} reached Level ${unit.level}${labels.length ? ` (${labels.join(", ")})` : ""}`,
+    });
   }
   this.updateUnitPanel(unit);
 };
@@ -2719,7 +2948,7 @@ Game.prototype.chooseAIPurchaseType = function() {
   const needHealer = aiUnits.some(u => u.hp < u.maxHp);
   if (needHealer && uniqueAffordable.includes("Mage")) return "Mage";
   const preferRanged = playerUnits.length === 0 || playerUnits.some(u => u.type === "Warrior");
-  const weights = { Warrior: 1, Archer: 2, Mage: 1, Paladin: 2, Berserker: 2, Builder: 2, Alchemist: 2, Rogue: 2, Cleric: 1 };
+  const weights = { Warrior: 1, Archer: 2, Mage: 1, Paladin: 2, Berserker: 2, Builder: 2, Alchemist: 2, Rogue: 2, Cleric: 1, Firecaller: 2, Magnet: 1, Avenger: 1, Necromancer: 1, Hex: 1, Sludge: 1, Druid: 1, Sentinel: 2, Ballista: 2 };
   if (preferRanged) { weights.Archer += 1; weights.Paladin += 1; }
   const list = uniqueAffordable.flatMap(t => Array(weights[t]).fill(t));
   return list[Math.floor(Math.random() * list.length)];

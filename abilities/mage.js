@@ -3,10 +3,21 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Mage = {
-    hp: 5, range: 2, dmg: 2, move: 1, cost: 2,
-    symbol: "🔮", ability: "Frostbolt (Damage + Stun)",
+    hp: 5, range: 2, dmg: 2, move: 2, cost: 4,
+    symbol: "🔮", ability: "Crowdcontrol Mage",
     rangePattern: "square", movePattern: "orthogonal",
-    cooldowns: { "Frostbolt": 4 }
+    cooldowns: { "Frostbolt": 4 },
+    leveling: {
+      xpToLevel: { 2: 7, 3: 14 },
+      levels: {
+        2: [
+          { label: "+1 Damage", stat: "dmg", amount: 1 },
+        ],
+        3: [
+          { label: "+1 Range", stat: "range", amount: 1 },
+        ],
+      },
+    },
   };
   const makeFrostbolt = () => ({
     name: "Frostbolt",
@@ -48,7 +59,7 @@
         game.playSfx && game.playSfx("hit");
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      const baseCd = (Entities.unitDefs.Mage.cooldowns && Entities.unitDefs.Mage.cooldowns["Frostbolt"]) || 2;
+      const baseCd = game.getAbilityCooldown(unit, "Frostbolt");
       unit.abilityCooldowns["Frostbolt"] = baseCd;
       game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Mage`, ability: "Frostbolt", target: target ? target.type : "Unknown" });
     },

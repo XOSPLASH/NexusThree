@@ -26,6 +26,8 @@ const makeUnit = (team, type, row, col) => ({
   rangePattern: unitDefs[type].rangePattern,
   movePattern: unitDefs[type].movePattern || "orthogonal",
   abilityCooldowns: {},
+  cooldownMods: {},
+  globalCooldownMod: 0,
   runes: [],
   exp: 0,
   level: 1,
@@ -35,8 +37,22 @@ const makeUnit = (team, type, row, col) => ({
   hexTurns: 0,
   burnTurns: 0,
   beastTurns: 0,
+  guardTurns: 0,
+  siegeTurns: 0,
   stuck: false,
   isBeast: false,
+  leveling: unitDefs[type].leveling || null,
 });
 
+const defaultLeveling = {
+  xpToLevel: { 2: 6, 3: 12 },
+  levels: {
+    2: [{ label: "+1 Damage", stat: "dmg", amount: 1 }],
+    3: [{ label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 }],
+  },
+};
+
 window.Entities = { unitDefs, makeBase, makeUnit };
+window.Entities.getLevelingProfile = function(type) {
+  return (unitDefs[type] && unitDefs[type].leveling) || defaultLeveling;
+};
