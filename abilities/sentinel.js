@@ -3,7 +3,7 @@
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Sentinel = {
     hp: 10, range: 1, dmg: 1, move: 1, cost: 5,
-    symbol: "🏯", ability: "Anchor line defender",
+    symbol: "🪨", ability: "Anchor line defender",
     rangePattern: "orthogonal", movePattern: "orthogonal",
     cooldowns: { "Fortify": 3 },
     leveling: {

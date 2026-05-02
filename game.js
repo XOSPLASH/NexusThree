@@ -208,7 +208,7 @@ class Game {
         if (t === "wall" || t === "bridge" || t === "fortwall") {
           const terrainIcon = document.createElement("span");
           terrainIcon.className = "terrain-icon";
-          terrainIcon.textContent = t === "wall" ? "🧱" : (t === "bridge" ? "🌉" : "🏯");
+          terrainIcon.textContent = t === "wall" ? "🧱" : (t === "bridge" ? "🌉" : "⬜");
           cell.appendChild(terrainIcon);
         }
       }
@@ -397,7 +397,7 @@ class Game {
     const terrainInfo = {
       water: { icon: "🌊", name: "Water", desc: "Water blocks most units. Builders can turn it into a bridge.", notes: [["Movement", "Blocked"], ["Builder", "Can bridge"]], subtype: "water" },
       wall: { icon: "🧱", name: "Wall", desc: "A basic wall tile that blocks movement and line paths.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "wall" },
-      fortwall: { icon: "🏯", name: "Fortwall", desc: "A reinforced wall built by the Builder. It blocks movement.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "fortwall" },
+      fortwall: { icon: "⬜", name: "Fortwall", desc: "A reinforced wall built by the Builder. It blocks movement.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "fortwall" },
       bridge: { icon: "🌉", name: "Bridge", desc: "A passable bridge over water created by construction.", notes: [["Movement", "Passable"], ["Builder", "Can revert"]], subtype: "bridge" },
       nexus: { icon: "💠", name: "Nexus", desc: "Standing here captures the nexus for your team and helps units level up.", notes: [["Effect", "Capture point"], ["Bonus", "Grants XP"]], subtype: "nexus" },
       grass: { icon: "🟩", name: "Open Ground", desc: "Open ground with no special effect.", notes: [["Movement", "Passable"], ["Effect", "None"]], subtype: "grass" }
@@ -608,7 +608,7 @@ class Game {
         statsEl.appendChild(li);
       }
       return;
-      const terrIcon = ent.terrain === "water" ? "🌊" : ent.terrain === "wall" ? "🧱" : ent.terrain === "fortwall" ? "🏯" : ent.terrain === "bridge" ? "🌉" : ent.terrain === "nexus" ? "💠" : "🟩";
+      const terrIcon = ent.terrain === "water" ? "🌊" : ent.terrain === "wall" ? "🧱" : ent.terrain === "fortwall" ? "⬜" : ent.terrain === "bridge" ? "🌉" : ent.terrain === "nexus" ? "💠" : "🟩";
       iconEl.innerHTML = `<span>${terrIcon}</span>`;
       nameEl.textContent = ent.terrain.charAt(0).toUpperCase() + ent.terrain.slice(1);
       descEl.textContent = `Coordinates: (${displayRow}, ${displayCol})`;

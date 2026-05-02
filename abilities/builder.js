@@ -6,7 +6,7 @@
     hp: 5, range: 1, dmg: 1, move: 2, cost: 2,
     symbol: "🛠️", ability: "Terrain transformation",
     rangePattern: "orthogonal", movePattern: "orthogonal",
-    cooldowns: { "Construct": 1 },
+    cooldowns: { "Construct": 6 },
     leveling: {
       xpToLevel: { 2: 5, 3: 10 },
       levels: {
