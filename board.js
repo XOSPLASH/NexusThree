@@ -1,4 +1,4 @@
-// Board: manages the 10x10 clickable cells and highlights
+// Board: manages the clickable cells and highlights
 class Board {
   constructor(rows, cols, mountEl) {
     this.rows = rows;
@@ -17,7 +17,7 @@ class Board {
         cell.className = "cell";
         cell.dataset.row = String(r);
         cell.dataset.col = String(c);
-        cell.setAttribute("aria-label", `Cell ${r + 1}, ${c + 1}`);
+        cell.setAttribute("aria-label", `Cell ${this.rows - r}, ${c + 1}`);
         this.cells[r][c] = cell;
         frag.appendChild(cell);
       }

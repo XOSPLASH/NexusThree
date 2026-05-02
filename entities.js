@@ -31,8 +31,8 @@ const makeUnit = (team, type, row, col) => ({
   runes: [],
   exp: 0,
   level: 1,
-  apMax: 2,
-  ap: 2,
+  apMax: unitDefs[type].apMax || 2,
+  ap: unitDefs[type].apMax || 2,
   stunnedTurns: 0,
   hexTurns: 0,
   burnTurns: 0,
@@ -41,6 +41,7 @@ const makeUnit = (team, type, row, col) => ({
   siegeTurns: 0,
   stuck: false,
   isBeast: false,
+  isBuilding: !!unitDefs[type].isBuilding,
   leveling: unitDefs[type].leveling || null,
 });
 
@@ -54,5 +55,8 @@ const defaultLeveling = {
 
 window.Entities = { unitDefs, makeBase, makeUnit };
 window.Entities.getLevelingProfile = function(type) {
-  return (unitDefs[type] && unitDefs[type].leveling) || defaultLeveling;
+  const def = unitDefs[type];
+  if (!def) return defaultLeveling;
+  if (def.isBuilding) return null;
+  return def.leveling || defaultLeveling;
 };

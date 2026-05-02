@@ -6,6 +6,7 @@ class Game {
     this.selected = null;
     this.abilityMode = null;
     this.buySelection = null;
+    this.shopFilters = { filterValue: "all", sort: "cost" };
     this.overlay = null;
     this.runeTooltip = null;
     this.runeTooltipCleanup = null;
@@ -74,6 +75,66 @@ class Game {
       return this.isFriendlyTeam(ent.team) ? "🏰" : "⛩️";
     }
     return ent.symbol;
+  }
+
+  getDisplayCoords(row, col) {
+    return [Config.ROWS - row, col + 1];
+  }
+
+  getShopRoleSummary(type) {
+    const roles = {
+      Warrior: "Frontline Bruiser",
+      Archer: "Long-Range Skirmisher",
+      Mage: "Burst Caster",
+      Paladin: "Shield Anchor",
+      Berserker: "Aggro Diver",
+      Builder: "Tactical Support",
+      Alchemist: "Buff Support",
+      Rogue: "Swift Assassin",
+      Cleric: "Healing Support",
+      Firecaller: "Area Denial",
+      Magnet: "Pull Control",
+      Avenger: "Scaling Fighter",
+      Necromancer: "Minion Summoner",
+      Hex: "Debuff Caster",
+      Sludge: "Zone Trapper",
+      Druid: "Adaptive Support",
+      Sentinel: "Frontline Wall",
+      Ballista: "Siege Artillery",
+      Watchtower: "Long-Range Defense",
+      Sanctum: "Healing Support",
+      Forge: "Aegis Support",
+    };
+    return roles[type] || "Battle Unit";
+  }
+
+  getUnitClass(type) {
+    const def = window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[type];
+    if (def && def.isBuilding) return "Building";
+    const classes = {
+      Warrior: "Fighter",
+      Berserker: "Fighter",
+      Avenger: "Fighter",
+      Paladin: "Tank",
+      Sentinel: "Tank",
+      Archer: "Marksman",
+      Ballista: "Marksman",
+      Watchtower: "Marksman",
+      Rogue: "Assassin",
+      Magnet: "Assassin",
+      Hex: "Control",
+      Mage: "Control",
+      Firecaller: "Control",
+      Sludge: "Control",
+      Necromancer: "Control",
+      Alchemist: "Support",
+      Cleric: "Support",
+      Druid: "Support",
+      Sanctum: "Support",
+      Builder: "Support",
+      Skeleton: "Support",
+    };
+    return classes[type] || "Other";
   }
 
   canActivateAbility(unit, def) {
@@ -321,7 +382,7 @@ class Game {
     if (hazard.kind === "sludge") {
       return {
         icon: "🫧",
-        name: "Quagmire",
+        name: "Mire",
         desc: "A sludge trap that locks units in place until it fades.",
         notes: [["Hazard", "Sludge Trap"], ["Duration", `${hazard.turns} turn${hazard.turns === 1 ? "" : "s"}`], ["Effect", "Cannot move out"]],
         subtype: "sludge"
@@ -417,7 +478,15 @@ class Game {
 
   getUnitLevelingProfile(unitOrType) {
     const type = typeof unitOrType === "string" ? unitOrType : unitOrType && unitOrType.type;
-    return (window.Entities && window.Entities.getLevelingProfile && window.Entities.getLevelingProfile(type)) || {
+    if (!window.Entities || !window.Entities.getLevelingProfile) {
+      return {
+        xpToLevel: { 2: 6, 3: 12 },
+        levels: { 2: [], 3: [] },
+      };
+    }
+    const profile = window.Entities.getLevelingProfile(type);
+    if (profile == null) return null;
+    return profile || {
       xpToLevel: { 2: 6, 3: 12 },
       levels: { 2: [], 3: [] },
     };
@@ -430,8 +499,44 @@ class Game {
 
   getLevelUpLabels(unitOrType, level) {
     const profile = this.getUnitLevelingProfile(unitOrType);
+    if (!profile) return [];
     const bonuses = (profile.levels && profile.levels[level]) || [];
     return bonuses.map(b => b.label).filter(Boolean);
+  }
+
+  formatLevelBonusLabel(label) {
+    if (!label) return "";
+    const cooldownMatch = label.match(/cooldown\s*([+-]?\d+)/i);
+    if (cooldownMatch) return `CD ${cooldownMatch[1]}`;
+    const plusMatch = label.match(/^\+(\d+)\s+(.+)$/);
+    if (plusMatch) {
+      const amount = plusMatch[1];
+      let stat = plusMatch[2].replace(/^Max\s+/i, "").replace(/^Attack\s+/i, "");
+      if (/^HP$/i.test(stat) || /HP$/i.test(stat)) stat = "HP";
+      return `${stat} +${amount}`;
+    }
+    return label;
+  }
+
+  getUnitStatusEntries(unit) {
+    if (!unit || unit.kind !== "unit") return [];
+    const statuses = [];
+    const push = (label, turns) => {
+      const count = Number(turns || 0);
+      if (count > 0) statuses.push([label, `${count}T`]);
+    };
+    push("Beast Form", unit.isBeast ? Math.max(1, unit.beastTurns || 0) : 0);
+    push("Hexed", unit.hexMarked ? Math.max(1, unit.hexTurns || 0) : 0);
+    push("Guarded", unit.guardTurns);
+    push("Sieged", unit.siegeTurns);
+    push("Burning", unit.burnTurns);
+    push("Stunned", unit.stunnedTurns);
+    if (unit.stuck) {
+      const hazard = this.hazards && this.hazards[unit.row] && this.hazards[unit.row][unit.col];
+      const turns = hazard && hazard.kind === "sludge" ? hazard.turns : 0;
+      statuses.push(["Trapped", turns > 0 ? `${turns}T` : "Mire"]);
+    }
+    return statuses;
   }
 
   getAbilityCooldown(unit, abilityName) {
@@ -495,7 +600,8 @@ class Game {
       iconEl.innerHTML = `<span>${info.icon}</span>`;
       nameEl.textContent = info.name;
       descEl.textContent = info.desc;
-      const rows = [["Tile", `(${ent.row + 1}, ${ent.col + 1})`], ...info.notes];
+      const [displayRow, displayCol] = this.getDisplayCoords(ent.row, ent.col);
+      const rows = [["Tile", `(${displayRow}, ${displayCol})`], ...info.notes];
       for (const [k, v] of rows) {
         const li = document.createElement("li");
         li.textContent = `${k}: ${v}`;
@@ -505,7 +611,7 @@ class Game {
       const terrIcon = ent.terrain === "water" ? "🌊" : ent.terrain === "wall" ? "🧱" : ent.terrain === "fortwall" ? "🏯" : ent.terrain === "bridge" ? "🌉" : ent.terrain === "nexus" ? "💠" : "🟩";
       iconEl.innerHTML = `<span>${terrIcon}</span>`;
       nameEl.textContent = ent.terrain.charAt(0).toUpperCase() + ent.terrain.slice(1);
-      descEl.textContent = `Coordinates: (${ent.row}, ${ent.col})`;
+      descEl.textContent = `Coordinates: (${displayRow}, ${displayCol})`;
       return;
     }
 
@@ -527,7 +633,7 @@ class Game {
     nameEl.textContent = `${teamName} ${ent.type}`;
     descEl.textContent = def.ability;
 
-    if (ent.kind === "unit") {
+    if (ent.kind === "unit" && !ent.isBuilding) {
       const profile = this.getUnitLevelingProfile(ent);
       const currentLevel = Math.max(1, Math.min(3, ent.level || 1));
       const currentXp = ent.exp || 0;
@@ -542,13 +648,16 @@ class Game {
         const reached = currentLevel >= level;
         const xp = this.getLevelXpFor(ent, level);
         const labels = this.getLevelUpLabels(ent, level);
+        const buffPills = labels.length
+          ? labels.map(label => `<span class="level-buff-pill">${this.formatLevelBonusLabel(label)}</span>`).join("")
+          : `<span class="level-buff-pill muted">No buffs</span>`;
         return `
           <div class="level-branch${reached ? " reached" : ""}">
             <div class="level-branch-head">
               <span class="level-chip">Lv${level}</span>
               <span class="level-xp-tag">${xp != null ? `${xp} XP` : "Max"}</span>
             </div>
-            <div class="level-branch-body">${labels.length ? labels.join("<br>") : "No stat changes"}</div>
+            <div class="level-branch-body">${buffPills}</div>
           </div>
         `;
       }).join("");
@@ -565,7 +674,6 @@ class Game {
           <span class="level-chip">Level ${currentLevel}</span>
           <span class="level-reward">${nextReward}</span>
         </div>
-        <div class="leveling-copy">XP grows from combat, kills, and objective pressure. Each unit has its own stat curve and upgrade pacing.</div>
         <div class="leveling-progress-wrap">
           <div class="leveling-progress-bar"><div class="leveling-progress-fill" style="width:${progressPct}%"></div></div>
           <div class="leveling-progress-meta">${currentLevel >= 3 ? "XP MAXED" : `XP ${currentXp}/${nextLevelXp}`}</div>
@@ -612,6 +720,32 @@ class Game {
           `;
         }
         statsEl.appendChild(li);
+      }
+      if (ent.isBuilding) {
+        const structureRow = document.createElement("li");
+        structureRow.className = "stat-card stat-card-tile";
+        structureRow.innerHTML = `
+          <span class="stat-key">Structure</span>
+          <span class="stat-value-wrap">
+            <span class="stat-value">Building</span>
+            <span class="muted-sub">Stationary</span>
+          </span>
+        `;
+        statsEl.appendChild(structureRow);
+      }
+      const statuses = this.getUnitStatusEntries(ent);
+      if (statuses.length > 0) {
+        const statusWrap = document.createElement("div");
+        statusWrap.className = "details-section detail-dynamic";
+        const statusLabel = document.createElement("div");
+        statusLabel.className = "section-label";
+        statusLabel.textContent = "Status";
+        const statusPanel = document.createElement("div");
+        statusPanel.className = "status-panel";
+        statusPanel.innerHTML = statuses.map(([label, turns]) => `<span class="status-pill">${label} - ${turns}</span>`).join("");
+        statusWrap.appendChild(statusLabel);
+        statusWrap.appendChild(statusPanel);
+        unitPanel.appendChild(statusWrap);
       }
       if (!this.entities.includes(ent)) {
         const tileInfo = this.getTileDescriptor(ent.row, ent.col);
@@ -1077,34 +1211,32 @@ class Game {
 
     if (isMyTurn && this.buySelection) {
       const myTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
-      const base = this.entities.find(e => e.kind === "base" && e.team === myTeam);
-      if (base) {
-        const positions = this.getBuyPositions(myTeam).map(JSON.stringify);
-        const key = JSON.stringify([r, c]);
-        if (positions.includes(key)) {
-          const type = this.buySelection.type;
-          const cost = this.buySelection.cost;
-          const hasType = this.entities.some(e => e.kind === "unit" && e.team === myTeam && e.type === type);
-          if (!hasType && this.spendEnergy(myTeam, cost)) {
-            const u = Entities.makeUnit(myTeam, type, r, c);
-            this.addEntity(u);
-            this.purchasedUnits[myTeam].add(type);
-            this.buySelection = null;
-            const cancelBtn = document.getElementById("buy-cancel");
-            if (cancelBtn) cancelBtn.style.display = "none";
-            this.board.clearMarks();
-            this.renderEntities();
-            this.updateHUD();
-            this.renderBuyControls();
-            this.updateUnitPanel(u);
-            
-            if (this.isMultiplayer) {
-              window.Multiplayer.sendPacket('BUY', { team: myTeam, unitType: type, r, c, energy: this.energy[myTeam] });
-            }
-            return;
+      const type = this.buySelection.type;
+      const positions = this.getBuyPositions(myTeam, type).map(JSON.stringify);
+      const key = JSON.stringify([r, c]);
+      if (positions.includes(key)) {
+        const cost = this.buySelection.cost;
+        const hasType = this.entities.some(e => e.kind === "unit" && e.team === myTeam && e.type === type);
+        if (!hasType && this.spendEnergy(myTeam, cost)) {
+          const u = Entities.makeUnit(myTeam, type, r, c);
+          this.addEntity(u);
+          this.purchasedUnits[myTeam].add(type);
+          this.buySelection = null;
+          const cancelBtn = document.getElementById("buy-cancel");
+          if (cancelBtn) cancelBtn.style.display = "none";
+          this.board.clearMarks();
+          this.renderEntities();
+          this.updateHUD();
+          this.renderBuyControls();
+          this.updateUnitPanel(u);
+          
+          if (this.isMultiplayer) {
+            window.Multiplayer.sendPacket('BUY', { team: myTeam, unitType: type, r, c, energy: this.energy[myTeam] });
           }
+          return;
         }
       }
+      return;
     }
 
     if (this.abilityMode && this.abilityMode.unit && (this.isMultiplayer ? this.abilityMode.unit.team === this.playerTeam : this.abilityMode.unit.team === Config.TEAM.PLAYER)) {
@@ -1430,19 +1562,19 @@ class Game {
     for (const ent of this.entities) {
       if (ent.kind !== "unit" || ent.team !== team) continue;
       if ((ent.hexTurns || 0) > 0) {
-        ent.hexTurns -= 1;
+        ent.hexTurns = Math.max(0, (ent.hexTurns || 0) - 1);
         if (ent.hexTurns <= 0) ent.hexMarked = false;
       }
-      if (ent.isBeast && (ent.beastTurns || 0) > 0) {
-        ent.beastTurns -= 1;
+      if (ent.isBeast) {
+        ent.beastTurns = Math.max(0, (ent.beastTurns || 0) - 1);
         if (ent.beastTurns <= 0) this.revertBeastForm(ent);
       }
       if (ent.siegeTurns && ent.siegeTurns > 0) {
-        ent.siegeTurns -= 1;
+        ent.siegeTurns = Math.max(0, ent.siegeTurns - 1);
         if (ent.siegeTurns <= 0) this.revertSiegeMode(ent);
       }
       if (ent.guardTurns && ent.guardTurns > 0) {
-        ent.guardTurns -= 1;
+        ent.guardTurns = Math.max(0, ent.guardTurns - 1);
       }
     }
   }
@@ -1714,7 +1846,7 @@ class Game {
             }
           }
         }
-        if (u.type === "Sludge" && ((u.abilityCooldowns["Quagmire"] || 0) === 0)) {
+        if (u.type === "Sludge" && ((u.abilityCooldowns["Mire"] || 0) === 0)) {
           const def = (window.Abilities && window.Abilities.Sludge && window.Abilities.Sludge[0]);
           if (def) {
             const targets = def.computeTargets(this, u);
@@ -1738,7 +1870,8 @@ class Game {
             if (scored.length > 0 && scored[0].score > 0) {
               def.perform(this, u, scored[0].r, scored[0].c);
               this.animateAbilityCast(u, def, scored[0].r, scored[0].c);
-              this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Quagmire", target: `(${scored[0].r}, ${scored[0].c})` });
+              const [displayRow, displayCol] = this.getDisplayCoords(scored[0].r, scored[0].c);
+              this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: "Mire", target: `(${displayRow}, ${displayCol})` });
               await this.delay(320);
               continue;
             }
@@ -2423,7 +2556,7 @@ Game.prototype.animateAbilityCast = function(unit, def, r, c) {
     this.createParticles(target.row, target.col, "#fb923c");
     return;
   }
-  if (name === "Quagmire") {
+  if (name === "Mire") {
     this.spawnBeamFx(source, target, "fx-sludge", 340);
     this.spawnBurstFx(target.row, target.col, "fx-sludgeburst", 760);
     this.createParticles(target.row, target.col, "#84cc16");
@@ -2567,21 +2700,27 @@ Game.prototype.placeNexuses = function() {
 };
 
 Game.prototype.pickMirroredBasePositions = function() {
-  let tries = 0;
-  while (tries++ < 200) {
-    const r = Math.floor(Config.ROWS * 0.7) + Math.floor(Math.random() * Math.ceil(Config.ROWS * 0.3));
-    const c = Math.floor(Math.random() * Math.ceil(Config.COLS * 0.3));
-    if (!this.inBounds(r, c)) continue;
-    if (this.occupants[r][c] != null) continue;
-    const mr = Config.ROWS - 1 - r;
-    const mc = Config.COLS - 1 - c;
-    if (!this.inBounds(mr, mc)) continue;
-    if (this.occupants[mr][mc] != null) continue;
-    const d = Math.abs(mr - r) + Math.abs(mc - c);
-    if (d < Math.floor((Config.ROWS + Config.COLS) * 0.8)) continue;
-    return [[r, c], [mr, mc]];
+  const minRow = Math.max(2, Math.floor(Config.ROWS * 0.62));
+  const maxRow = Config.ROWS - 2;
+  const minCol = 1;
+  const maxCol = Math.max(3, Math.floor(Config.COLS * 0.4));
+  const minDistance = Math.floor((Config.ROWS + Config.COLS) * 0.7);
+  const candidates = [];
+  for (let r = minRow; r <= maxRow; r++) {
+    for (let c = minCol; c <= maxCol; c++) {
+      const mr = Config.ROWS - 1 - r;
+      const mc = Config.COLS - 1 - c;
+      const d = Math.abs(mr - r) + Math.abs(mc - c);
+      if (d < minDistance) continue;
+      if (!this.inBounds(r, c) || !this.inBounds(mr, mc)) continue;
+      if (this.occupants[r][c] != null || this.occupants[mr][mc] != null) continue;
+      candidates.push([[r, c], [mr, mc]]);
+    }
   }
-  return [[Config.ROWS - 1, 0], [0, Config.COLS - 1]];
+  if (candidates.length) {
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+  return [[Config.ROWS - 2, 1], [1, Config.COLS - 2]];
 };
 
 Game.prototype.generateEnergy = function(team) {
@@ -2727,11 +2866,11 @@ Game.prototype.scoreAIRune = function(unit, rune) {
   let score = 0;
   if (rune.id === "rune_hp") score += unit.maxHp <= 5 ? 7 : 4;
   if (rune.id === "rune_dmg") score += unit.dmg >= 3 ? 8 : 5;
-  if (rune.id === "rune_move") score += unit.range <= 2 ? 7 : 4;
+  if (rune.id === "rune_move") score += unit.move <= 2 ? 8 : 4;
   if (rune.id === "rune_range") score += unit.range >= 2 ? 8 : 3;
   if (rune.id === "rune_ap") score += unit.apMax <= 2 ? 9 : 5;
-  if (rune.id === "rune_rampart") score += unit.maxHp <= 7 ? 9 : 5;
-  if (rune.id === "rune_deft") score += (unit.range <= 2 || unit.dmg <= 2) ? 8 : 4;
+  if (rune.id === "rune_rampart") score += unit.maxHp <= 8 ? 9 : 4;
+  if (rune.id === "rune_deft") score += (unit.range >= 2 && unit.dmg <= 3) ? 9 : 4;
   if (rune.id === "rune_focus") score += (window.Abilities && window.Abilities[unit.type] && window.Abilities[unit.type].length) ? 9 : 2;
   if (unit.type === "Cleric" || unit.type === "Mage" || unit.type === "Hex") {
     if (rune.id === "rune_range") score += 4;
@@ -2740,10 +2879,12 @@ Game.prototype.scoreAIRune = function(unit, rune) {
     if (rune.id === "rune_move" || rune.id === "rune_dmg") score += 4;
   }
   if (unit.type === "Druid" && rune.id === "rune_hp") score += 5;
-  if (unit.type === "Sentinel" && rune.id === "rune_rampart") score += 5;
+  if (unit.type === "Sentinel" && rune.id === "rune_rampart") score += 7;
   if (unit.type === "Sentinel" && rune.id === "rune_deft") score += 2;
-  if (unit.type === "Ballista" && rune.id === "rune_range") score += 5;
+  if (unit.type === "Ballista" && rune.id === "rune_range") score += 6;
   if (unit.type === "Ballista" && rune.id === "rune_dmg") score += 4;
+  if (unit.type === "Watchtower" && rune.id === "rune_range") score += 5;
+  if (unit.type === "Paladin" && rune.id === "rune_rampart") score += 4;
   return score - (rune.cost * 0.35);
 };
 
@@ -2767,6 +2908,7 @@ Game.prototype.chooseBestAIRunePurchase = function() {
 
 Game.prototype.applyUnitLevelUp = function(unit, level) {
   const profile = this.getUnitLevelingProfile(unit);
+  if (!profile) return [];
   const bonuses = (profile.levels && profile.levels[level]) || [];
   const applied = [];
   unit.cooldownMods = unit.cooldownMods || {};
@@ -2810,10 +2952,12 @@ Game.prototype.applyUnitLevelUp = function(unit, level) {
  
 Game.prototype.awardExp = function(unit, amount, targetOpt) {
   if (!unit || unit.kind !== "unit") return;
+  if (unit.isBuilding) return;
   if (unit.level >= 3) return;
   const scaled = Math.max(0, amount);
   unit.exp += scaled;
   const profile = this.getUnitLevelingProfile(unit);
+  if (!profile) return;
   while (unit.level < 3 && unit.exp >= ((profile.xpToLevel && profile.xpToLevel[unit.level + 1]) || Infinity)) {
     unit.level += 1;
     const labels = this.applyUnitLevelUp(unit, unit.level);
@@ -2826,7 +2970,22 @@ Game.prototype.awardExp = function(unit, amount, targetOpt) {
   this.updateUnitPanel(unit);
 };
 
-Game.prototype.getBuyPositions = function(team) {
+Game.prototype.getBuyPositions = function(team, type) {
+  const def = type ? (Entities.unitDefs[type] || null) : null;
+  if (def && def.isBuilding) {
+    const res = [];
+    const startRow = team === Config.TEAM.PLAYER ? Math.floor(Config.ROWS / 2) : 0;
+    const endRow = team === Config.TEAM.PLAYER ? Config.ROWS : Math.floor(Config.ROWS / 2);
+    for (let r = startRow; r < endRow; r++) {
+      for (let c = 0; c < Config.COLS; c++) {
+        const t = this.terrain[r][c];
+        if (t === "water" || t === "wall" || t === "fortwall" || t === "bridge" || t === "nexus") continue;
+        if (this.occupants[r][c] != null) continue;
+        res.push([r, c]);
+      }
+    }
+    return res;
+  }
   const base = this.entities.find(e => e.kind === "base" && e.team === team);
   if (!base) return [];
   const res = [];
@@ -2851,22 +3010,57 @@ Game.prototype.renderBuyControls = function() {
   const wrap = document.getElementById("buy-controls");
   if (!wrap || !window.Entities || !window.Entities.unitDefs) return;
   const defs = window.Entities.unitDefs;
-  const groups = {};
-  Object.keys(defs).forEach(t => {
-    if (defs[t].hiddenFromShop) return;
-    const c = defs[t].cost || 0;
-    if (!groups[c]) groups[c] = [];
-    groups[c].push(t);
-  });
-  const uniqCosts = Object.keys(groups).map(Number).sort((a, b) => a - b);
+  const allUnits = Object.keys(defs).filter(t => !defs[t].hiddenFromShop);
+  const sortMode = this.shopFilters.sort === "class" ? "class" : "cost";
+  const classOrder = ["Fighter", "Marksman", "Assassin", "Support", "Tank", "Control", "Building", "Other"];
+  const getGroupValue = (type) => sortMode === "class" ? this.getUnitClass(type) : String(defs[type].cost || 0);
+  const groupValues = sortMode === "class"
+    ? classOrder.filter(cls => allUnits.some(t => this.getUnitClass(t) === cls))
+    : Array.from(new Set(allUnits.map(t => String(defs[t].cost || 0)))).map(Number).sort((a, b) => a - b).map(String);
+  const options = sortMode === "class" ? classOrder.filter(cls => allUnits.some(t => this.getUnitClass(t) === cls)) : Array.from(new Set(allUnits.map(t => String(defs[t].cost || 0)))).map(Number).sort((a, b) => a - b).map(String);
+  const selectedFilter = this.shopFilters.filterValue || "all";
   const frag = document.createDocumentFragment();
-  uniqCosts.forEach(c => {
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "shop-toolbar";
+  const filterSelect = document.createElement("select");
+  filterSelect.className = "shop-filter-select";
+  filterSelect.innerHTML = [`<option value="all">${sortMode === "class" ? "All Classes" : "All Costs"}</option>`]
+    .concat(options.map(opt => `<option value="${opt}">${opt}</option>`))
+    .join("");
+  if (options.includes(selectedFilter) || selectedFilter === "all") {
+    filterSelect.value = selectedFilter;
+  } else {
+    filterSelect.value = "all";
+    this.shopFilters.filterValue = "all";
+  }
+  const sortSelect = document.createElement("select");
+  sortSelect.className = "shop-filter-select";
+  sortSelect.innerHTML = `
+    <option value="cost">Sort by Cost</option>
+    <option value="class">Sort by Class</option>
+  `;
+  sortSelect.value = sortMode;
+  filterSelect.addEventListener("change", () => {
+    this.shopFilters.filterValue = filterSelect.value || "all";
+    this.renderBuyControls();
+  });
+  sortSelect.addEventListener("change", () => {
+    this.shopFilters.sort = sortSelect.value;
+    this.shopFilters.filterValue = "all";
+    this.renderBuyControls();
+  });
+  toolbar.appendChild(filterSelect);
+  toolbar.appendChild(sortSelect);
+  frag.appendChild(toolbar);
+
+  groupValues.forEach(groupValue => {
     const group = document.createElement("div");
     group.className = "buy-group";
     const header = document.createElement("button");
     header.type = "button";
     header.className = "group-header btn";
-    header.textContent = `Cost ${c}`;
+    header.textContent = sortMode === "class" ? groupValue : `Cost ${groupValue}`;
     const list = document.createElement("div");
     list.className = "group-list";
     list.style.display = "none";
@@ -2874,16 +3068,26 @@ Game.prototype.renderBuyControls = function() {
       list.style.display = list.style.display === "none" ? "block" : "none";
     });
     const myTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
-    const remaining = groups[c].filter(t => {
-      return !this.purchasedUnits[myTeam].has(t);
+    const remaining = allUnits.filter(t => !this.purchasedUnits[myTeam].has(t));
+    const grouped = remaining.filter(t => getGroupValue(t) === groupValue);
+    const filterValue = this.shopFilters.filterValue || "all";
+    const filtered = grouped.filter(t => filterValue === "all" || getGroupValue(t) === filterValue);
+    filtered.sort((a, b) => {
+      if (sortMode === "class") {
+        const costDelta = (defs[a].cost || 0) - (defs[b].cost || 0);
+        if (costDelta !== 0) return costDelta;
+      }
+      return a.localeCompare(b);
     });
-    remaining.forEach(t => {
+    filtered.forEach(t => {
       const def = Entities.unitDefs[t];
       const item = document.createElement("button");
       item.type = "button";
       item.className = "unit-item";
-      item.innerHTML = `<div class="unit-title">${def.symbol} ${t}</div><div class="unit-desc-small">${def.ability}</div>`;
-      item.title = def.ability;
+      const roleSummary = this.getShopRoleSummary(t);
+      const className = this.getUnitClass(t);
+      item.innerHTML = `<div class="unit-title">${def.symbol} ${t}</div><div class="unit-desc-small">${roleSummary}</div>`;
+      item.title = `${className}: ${roleSummary}`;
       item.addEventListener("click", () => {
         if (this.buySelection && this.buySelection.type === t) {
           this.buySelection = null;
@@ -2895,7 +3099,7 @@ Game.prototype.renderBuyControls = function() {
           return;
         }
         this.buySelection = { type: t, cost: def.cost };
-        const pos = this.getBuyPositions(myTeam);
+        const pos = this.getBuyPositions(myTeam, t);
         this.board.clearMarks();
         this.board.markPositions(pos, "buy-hl");
         const cancelBtn = document.getElementById("buy-cancel");
@@ -2909,7 +3113,7 @@ Game.prototype.renderBuyControls = function() {
           row: 0, col: 0,
           hp: def.hp, maxHp: def.hp, dmg: def.dmg, range: def.range, move: def.move,
           symbol: def.symbol, ability: def.ability, rangePattern: def.rangePattern, movePattern: def.movePattern || "orthogonal",
-          abilityCooldowns: {}, runes: [], apMax: 2, ap: 2,
+          abilityCooldowns: {}, runes: [], apMax: def.apMax || 2, ap: def.apMax || 2,
         };
         this.updateUnitPanel(preview);
       });
@@ -2939,6 +3143,7 @@ Game.prototype.chooseAIPurchaseType = function() {
   const affordable = Object.keys(defs).filter(t => {
     if (t === "Skeleton") return false;
     if (defs[t].hiddenFromShop) return false;
+    if (defs[t].isBuilding) return false;
     return this.energy[Config.TEAM.AI] >= (defs[t].cost || 0);
   });
   if (affordable.length === 0) return null;

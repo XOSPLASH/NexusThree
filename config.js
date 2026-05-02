@@ -1,7 +1,7 @@
 // Global configuration
 window.Config = {
-  ROWS: 10,
-  COLS: 10,
+  ROWS: 12,
+  COLS: 12,
   TEAM: { PLAYER: "P", AI: "AI" },
   MAX_MOVE_PER_ACTION: 3,
   TERRAIN_DENSITY: 0.12,

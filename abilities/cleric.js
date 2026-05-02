@@ -3,7 +3,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Cleric = {
-    hp: 6, range: 2, dmg: 1, move: 2, cost: 4,
+    hp: 5, range: 2, dmg: 1, move: 2, cost: 2,
     symbol: "⚕️", ability: "Mass Healing",
     rangePattern: "square", movePattern: "orthogonal",
     cooldowns: { "Mass Heal": 4 },

@@ -3,7 +3,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Alchemist = {
-    hp: 6, range: 3, dmg: 3, move: 2, cost: 5,
+    hp: 6, range: 3, dmg: 2, move: 2, cost: 4,
     symbol: "⚗️", ability: "Catalyze a 3x3 area",
     rangePattern: "thrower", movePattern: "square",
     cooldowns: { "Catalyze": 5 }

@@ -144,8 +144,8 @@ body {
 .grid {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
-  grid-template-rows: repeat(10, minmax(0, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-rows: repeat(12, minmax(0, 1fr));
   width: min(100%, var(--grid-size));
   aspect-ratio: 1 / 1;
   height: auto;
@@ -320,8 +320,8 @@ body {
 .muted-sub {
   color: var(--muted);
   font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 .ap-pips { display: inline-flex; gap: 4px; margin-left: 8px; vertical-align: middle; }
@@ -453,12 +453,6 @@ body {
   color: #cbd5e1;
   font-size: 11px;
   font-weight: 700;
-}
-.leveling-copy {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.35;
-  margin-bottom: 10px;
 }
 .leveling-progress-wrap {
   margin-bottom: 10px;
@@ -777,6 +771,81 @@ body {
   flex: 1; 
   padding-right: 8px; 
 }
+.shop-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+}
+.shop-filter-select {
+  width: 100%;
+  background: #0f1328;
+  color: var(--text);
+  border: 1px solid #1f2442;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #8b93ab 50%),
+    linear-gradient(135deg, #8b93ab 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) calc(50% - 3px),
+    calc(100% - 12px) calc(50% - 3px);
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+}
+.shop-filter-select:focus {
+  outline: none;
+  border-color: rgba(110, 168, 254, 0.9);
+  box-shadow: 0 0 0 2px rgba(110, 168, 254, 0.18);
+}
+.shop-filter-select:hover {
+  border-color: rgba(96, 165, 250, 0.55);
+}
+.shop-filter-select {
+  min-width: 0;
+}
+.level-buff-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(15, 19, 40, 0.95);
+  border: 1px solid #2a3052;
+  color: #d1d5db;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin: 2px 4px 2px 0;
+}
+.level-buff-pill.muted {
+  color: #8b93ab;
+}
+.status-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(10, 14, 28, 0.95);
+  border: 1px solid rgba(110, 168, 254, 0.22);
+  color: #d1d5db;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
 .buy-group { 
   border: 1px solid #1f2442; 
   border-radius: 12px; 
@@ -816,7 +885,15 @@ body {
 .unit-item.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(110, 168, 254, 0.3); background: #1a2040; }
 
 .unit-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; color: var(--text); }
-.unit-desc-small { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.unit-desc-small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-variant: small-caps;
+  line-height: 1.4;
+}
 
 /* Spacing and Layout Polish */
 .center-wrap > * { margin-bottom: 0; } /* Reset margins since we use gap */

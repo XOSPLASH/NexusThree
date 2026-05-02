@@ -5,7 +5,7 @@
     hp: 6, range: 2, dmg: 1, move: 2, cost: 5,
     symbol: "🫧", ability: "Prevent Entry",
     rangePattern: "select", movePattern: "orthogonal",
-    cooldowns: { "Quagmire": 5 },
+    cooldowns: { "Mire": 5 },
     leveling: {
       xpToLevel: { 2: 8, 3: 16 },
       levels: {
@@ -14,13 +14,13 @@
         ],
         3: [
           { label: "+1 Move", stat: "move", amount: 1 },
-          { label: "Quagmire cooldown -1", stat: "cooldown", ability: "Quagmire", amount: -1 },
+          { label: "Mire cooldown -1", stat: "cooldown", ability: "Mire", amount: -1 },
         ],
       },
     },
   };
-  const makeQuagmire = () => ({
-    name: "Quagmire",
+  const makeMire = () => ({
+    name: "Mire",
     desc: "Create a 3x3 area where units cannot move out. Duration: 2 of Sludge's turns.",
     range: 3,
     rangePattern: "select",
@@ -39,13 +39,13 @@
         }
       }
       unit.ap = Math.max(0, unit.ap - 1);
-      const baseCd = game.getAbilityCooldown(unit, "Quagmire");
-      unit.abilityCooldowns["Quagmire"] = baseCd;
+      const baseCd = game.getAbilityCooldown(unit, "Mire");
+      unit.abilityCooldowns["Mire"] = baseCd;
       if (game.syncSludgeStatuses) game.syncSludgeStatuses();
       game.renderEntities();
       game.board.clearMarks();
       if (game.playSfx) game.playSfx("ability");
     },
   });
-  window.Abilities.Sludge = [makeQuagmire()];
+  window.Abilities.Sludge = [makeMire()];
 })(); 

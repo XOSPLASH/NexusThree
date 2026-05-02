@@ -4,7 +4,7 @@
   
   // Druid Definitions
   window.Entities.unitDefs.Druid = {
-    hp: 4, range: 2, dmg: 2, move: 3, cost: 4,
+    hp: 4, range: 2, dmg: 2, move: 3, cost: 2,
     symbol: "🧙‍♂️", ability: "Temporary Power",
     rangePattern: "self", movePattern: "orthogonal",
     cooldowns: { "Shapeshift": 6 },
@@ -46,12 +46,12 @@
 
       // Apply Beast Stats
       // Base Druid: HP 4, Dmg 2, Move 3
-      // Beast: High HP (8), High Dmg (4), Move +30% (4), 20% Dmg Red (handled in applyDamage)
+      // Beast: Stronger stats, but still a temporary commitment.
       unit.isBeast = true;
       unit.beastTurns = 2;
-      unit.maxHp = 10;
-      unit.hp = Math.min(unit.maxHp, unit.hp + 6); // Heal on transform? Or just increase max? Usually shapeshift heals or adds temp HP. Let's add difference.
-      unit.dmg = 5;
+      unit.maxHp = 9;
+      unit.hp = Math.min(unit.maxHp, unit.hp + 5);
+      unit.dmg = 4;
       unit.move = 4; // 3 * 1.3 ~= 3.9 -> 4
       unit.symbol = "🐻";
       unit.range = 1; // Melee range in beast form

@@ -2,7 +2,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Avenger = {
-    hp: 5, range: 1, dmg: 2, move: 2, cost: 3,
+    hp: 4, range: 1, dmg: 2, move: 2, cost: 2,
     symbol: "🦅", ability: "Gain buffs from ally deaths",
     rangePattern: "orthogonal", movePattern: "orthogonal",
     cooldowns: { "Vengeance": 4 },

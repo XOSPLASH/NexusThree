@@ -3,7 +3,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Warrior = {
-    hp: 7, range: 1, dmg: 2, move: 2, cost: 2,
+    hp: 8, range: 1, dmg: 2, move: 2, cost: 3,
     symbol: "⚔️", ability: "Piercing frontline strike",
     rangePattern: "orthogonal", movePattern: "orthogonal",
     cooldowns: { "Charge": 3 },
