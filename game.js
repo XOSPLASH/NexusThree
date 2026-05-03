@@ -15,6 +15,7 @@ class Game {
     this.terrain = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
     this.hazards = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
     this.constructionSites = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
+    this.biomes = []; // Array of { type, r, c, radius, team, duration, effect }
     this.entities = [];
     this.log = [];
     this.energy = { [Config.TEAM.PLAYER]: Config.ENERGY_START_PLAYER, [Config.TEAM.AI]: Config.ENERGY_START_AI };
@@ -109,8 +110,6 @@ class Game {
   }
 
   getUnitClass(type) {
-    const def = window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[type];
-    if (def && def.isBuilding) return "Building";
     const classes = {
       Warrior: "Fighter",
       Berserker: "Fighter",
@@ -119,7 +118,6 @@ class Game {
       Sentinel: "Tank",
       Archer: "Marksman",
       Ballista: "Marksman",
-      Watchtower: "Marksman",
       Rogue: "Assassin",
       Magnet: "Assassin",
       Hex: "Control",
@@ -130,7 +128,6 @@ class Game {
       Alchemist: "Support",
       Cleric: "Support",
       Druid: "Support",
-      Sanctum: "Support",
       Builder: "Support",
       Skeleton: "Support",
     };
@@ -157,14 +154,17 @@ class Game {
   }
 
   addEntity(ent) {
-    if (ent && ent.kind === "unit" && ent.type === "Skeleton") {
+    if (!ent) return;
+    if (ent.kind === "unit" && ent.type === "Skeleton") {
       if (!(ent.summonedBy === "Necromancer")) {
         this.logEvent({ type: "error", msg: "Blocked spawn: Skeleton can only be summoned by Necromancer" });
         return;
       }
     }
     this.entities.push(ent);
-    this.occupants[ent.row][ent.col] = ent;
+    if (ent.row != null && ent.col != null) {
+      this.occupants[ent.row][ent.col] = ent;
+    }
   }
 
   renderEntities() {
@@ -174,7 +174,7 @@ class Game {
       cell.style.borderColor = "";
       cell.classList.remove(
         "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","terrain-nexus-player","terrain-nexus-ai",
-        "hazard-fire","hazard-sludge","construction-site",
+        "hazard-fire","hazard-sludge","construction-site","biome-player","biome-ai",
         "unit-player","unit-ai","status-hex","status-stuck","token-player","token-ai",
         "move-hl","attack-hl","heal-hl","ability-hl","attack-range-hl","ability-range-max","selected-empty","selected-target-hl","buy-hl"
       );
@@ -213,6 +213,7 @@ class Game {
         }
       }
     }
+
     // Hazards overlay (e.g., fire)
     for (let r = 0; r < Config.ROWS; r++) {
       for (let c = 0; c < Config.COLS; c++) {
@@ -224,6 +225,7 @@ class Game {
         else if (h.kind === "sludge") cell.classList.add("hazard-sludge");
       }
     }
+
     // Construction Sites
     for (let r = 0; r < Config.ROWS; r++) {
       for (let c = 0; c < Config.COLS; c++) {
@@ -242,8 +244,42 @@ class Game {
         cell.appendChild(badge);
       }
     }
+
+    // Biomes
+    for (const biome of this.biomes) {
+      if (!biome) continue;
+      const radius = biome.radius || 0;
+      const bDef = window.Entities.biomeDefs[biome.type];
+      const color = bDef ? bDef.color : (this.isFriendlyTeam(biome.team) ? "rgba(59, 130, 246, 0.4)" : "rgba(239, 68, 68, 0.4)");
+      
+      for (let dr = -radius; dr <= radius; dr++) {
+        for (let dc = -radius; dc <= radius; dc++) {
+          const rr = biome.r + dr, cc = biome.c + dc;
+          if (!this.inBounds(rr, cc)) continue;
+          const cell = this.board.getCell(rr, cc);
+          if (!cell) continue;
+          
+          cell.style.backgroundColor = color.replace(")", ", 0.2)").replace("rgb", "rgba");
+          cell.classList.add(this.isFriendlyTeam(biome.team) ? "biome-player" : "biome-ai");
+          
+          // Only show symbol on the center tile
+          if (dr === 0 && dc === 0) {
+            const span = document.createElement("span");
+            span.className = "biome-icon";
+            span.textContent = biome.symbol;
+            cell.appendChild(span);
+            const badge = document.createElement("span");
+            badge.className = "status-badge";
+            badge.textContent = `${biome.duration}T`;
+            cell.appendChild(badge);
+          }
+        }
+      }
+    }
+
     // Units and bases
     for (const ent of this.entities) {
+      if (!ent || ent.row == null || ent.col == null) continue;
       const cell = this.board.getCell(ent.row, ent.col);
       if (!cell) continue;
       cell.classList.add(this.isFriendlyTeam(ent.team) ? "unit-player" : "unit-ai");
@@ -284,30 +320,62 @@ class Game {
     gridEl.addEventListener("mousemove", (e) => {
       const target = e.target.closest(".cell");
       if (!target) return;
-      if (!(this.abilityMode && this.abilityMode.def && (this.abilityMode.def.rangePattern || "").toLowerCase() === "select")) return;
       const r = Number(target.dataset.row);
       const c = Number(target.dataset.col);
-      this.board.clearMarks();
-      const u = this.abilityMode.unit;
-      this.board.markSelected(u.row, u.col);
-      const maxTargets = (this.abilityMode && this.abilityMode.targets) || [];
-      if (maxTargets.length) this.board.markPositions(maxTargets, "ability-range-max");
-      const selectedTiles = (this.abilityMode && this.abilityMode.selectedTiles) || [];
-      if (selectedTiles.length) this.board.markPositions(selectedTiles, "selected-target-hl");
-      if (maxTargets.some(([tr, tc]) => tr === r && tc === c)) {
-        const area = [];
-        const size = Math.max(1, Number(this.abilityMode.def.previewSize) || ((this.abilityMode.def.name === "Construct") ? 1 : 3));
-        const half = Math.floor(size / 2);
-        for (let dr = -half; dr <= (size - half - 1); dr++) {
-          for (let dc = -half; dc <= (size - half - 1); dc++) {
-            const rr = r + dr, cc = c + dc;
-            if (!this.inBounds(rr, cc)) continue;
-            area.push([rr, cc]);
+
+      if (this.abilityMode && this.abilityMode.def && (this.abilityMode.def.rangePattern || "").toLowerCase() === "select") {
+        this.board.clearMarks();
+        const u = this.abilityMode.unit;
+        this.board.markSelected(u.row, u.col);
+        const maxTargets = (this.abilityMode && this.abilityMode.targets) || [];
+        if (maxTargets.length) this.board.markPositions(maxTargets, "ability-range-max");
+        const selectedTiles = (this.abilityMode && this.abilityMode.selectedTiles) || [];
+        if (selectedTiles.length) this.board.markPositions(selectedTiles, "selected-target-hl");
+        if (maxTargets.some(([tr, tc]) => tr === r && tc === c)) {
+          const area = [];
+          const size = Math.max(1, Number(this.abilityMode.def.previewSize) || ((this.abilityMode.def.name === "Construct") ? 1 : 3));
+          const half = Math.floor(size / 2);
+          for (let dr = -half; dr <= (size - half - 1); dr++) {
+            for (let dc = -half; dc <= (size - half - 1); dc++) {
+              const rr = r + dr, cc = c + dc;
+              if (this.inBounds(rr, cc)) area.push([rr, cc]);
+            }
           }
+          this.board.markPositions(area, "ability-hl");
         }
-        this.board.markPositions(area, "ability-hl");
+      } else if (this.biomeSelection) {
+        const biomeDef = window.Entities.biomeDefs[this.biomeSelection];
+        if (biomeDef) {
+          const radius = biomeDef.radius || 0;
+          const area = [];
+          for (let dr = -radius; dr <= radius; dr++) {
+            for (let dc = -radius; dc <= radius; dc++) {
+              const rr = r + dr, cc = c + dc;
+              if (this.inBounds(rr, cc)) area.push([rr, cc]);
+            }
+          }
+          this.board.clearMarks();
+          // Re-mark available spots
+          const pos = [];
+          const canAfford = this.energy[this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER] >= biomeDef.cost;
+          if (canAfford) {
+            for (let ar = 0; ar < Config.ROWS; ar++) {
+              for (let ac = 0; ac < Config.COLS; ac++) {
+                if (this.terrain[ar][ac] !== "nexus") pos.push([ar, ac]);
+              }
+            }
+            this.board.markPositions(pos, "buy-hl");
+          }
+          // Mark preview area
+          this.board.markPositions(area, "ability-hl");
+        }
       }
     });
+
+    this.board.forEachCell(cell => {
+      // Cell specific events removed in favor of grid-level mousemove for better performance
+    });
+
     document.body.addEventListener("click", (e) => {
       if (!e.target.closest(".cell") &&
           !e.target.closest(".turnbar") &&
@@ -608,10 +676,14 @@ class Game {
         statsEl.appendChild(li);
       }
       return;
-      const terrIcon = ent.terrain === "water" ? "🌊" : ent.terrain === "wall" ? "🧱" : ent.terrain === "fortwall" ? "⬜" : ent.terrain === "bridge" ? "🌉" : ent.terrain === "nexus" ? "💠" : "🟩";
-      iconEl.innerHTML = `<span>${terrIcon}</span>`;
-      nameEl.textContent = ent.terrain.charAt(0).toUpperCase() + ent.terrain.slice(1);
-      descEl.textContent = `Coordinates: (${displayRow}, ${displayCol})`;
+    }
+
+    if (ent.kind === "biome" || ent.kind === "biome_preview") {
+      iconEl.textContent = ent.symbol;
+      const teamLabel = ent.kind === "biome_preview" ? "Preview" : (this.isMultiplayer ? (ent.team === this.playerTeam ? "Your" : "Enemy") : (ent.team === Config.TEAM.PLAYER ? "Player" : "AI"));
+      nameEl.textContent = `${teamLabel} ${ent.type}`;
+      descEl.textContent = ent.desc;
+      statsEl.innerHTML = `<li>Duration: ${ent.duration} turns</li>${ent.cost ? `<li>Cost: ${ent.cost}⚡</li>` : ""}`;
       return;
     }
 
@@ -633,7 +705,15 @@ class Game {
     nameEl.textContent = `${teamName} ${ent.type}`;
     descEl.textContent = def.ability;
 
-    if (ent.kind === "unit" && !ent.isBuilding) {
+    if (ent.kind === "unit") {
+      const def = window.Entities.unitDefs[ent.type];
+      if (!def) {
+        iconEl.textContent = "—";
+        nameEl.textContent = "Error";
+        descEl.textContent = "Unit data missing.";
+        return;
+      }
+
       const profile = this.getUnitLevelingProfile(ent);
       const currentLevel = Math.max(1, Math.min(3, ent.level || 1));
       const currentXp = ent.exp || 0;
@@ -720,18 +800,6 @@ class Game {
           `;
         }
         statsEl.appendChild(li);
-      }
-      if (ent.isBuilding) {
-        const structureRow = document.createElement("li");
-        structureRow.className = "stat-card stat-card-tile";
-        structureRow.innerHTML = `
-          <span class="stat-key">Structure</span>
-          <span class="stat-value-wrap">
-            <span class="stat-value">Building</span>
-            <span class="muted-sub">Stationary</span>
-          </span>
-        `;
-        statsEl.appendChild(structureRow);
       }
       const statuses = this.getUnitStatusEntries(ent);
       if (statuses.length > 0) {
@@ -1070,10 +1138,29 @@ class Game {
   getAttackTargets(unit) {
     if (unit.ap < 1) return [];
     const res = [];
+    
+    // Biome range bonus
+    let rangeBonus = 0;
+    const biomeDefs = window.Entities.biomeDefs;
+    for (const b of this.biomes) {
+      if (b && b.team === unit.team) {
+        const dist = Math.max(Math.abs(unit.row - b.r), Math.abs(unit.col - b.c));
+        if (dist <= (b.radius || 0)) {
+          const def = biomeDefs[b.type];
+          if (def && def.effectType === "stat_buff" && def.stat === "range") {
+            if (!def.filter || this.getUnitClass(unit.type) === def.filter) {
+              rangeBonus += (def.amount || 0);
+            }
+          }
+        }
+      }
+    }
+    const effectiveRange = unit.range + rangeBonus;
+
     for (const ent of this.entities) {
       if (ent.team === unit.team) continue;
       const dist = this.distanceByPattern(unit, ent.row - unit.row, ent.col - unit.col);
-      if (dist <= unit.range) res.push([ent.row, ent.col]);
+      if (dist <= effectiveRange) res.push([ent.row, ent.col]);
     }
     const isThrower = ((unit.rangePattern || "").toLowerCase() === "thrower");
     if (isThrower) return res;
@@ -1109,14 +1196,33 @@ class Game {
 
   getAttackRangeTiles(unit) {
     const res = [];
-    for (let dr = -unit.range; dr <= unit.range; dr++) {
-      for (let dc = -unit.range; dc <= unit.range; dc++) {
+    
+    // Biome range bonus
+    let rangeBonus = 0;
+    const biomeDefs = window.Entities.biomeDefs;
+    for (const b of this.biomes) {
+      if (b && b.team === unit.team) {
+        const dist = Math.max(Math.abs(unit.row - b.r), Math.abs(unit.col - b.c));
+        if (dist <= (b.radius || 0)) {
+          const def = biomeDefs[b.type];
+          if (def && def.effectType === "stat_buff" && def.stat === "range") {
+            if (!def.filter || this.getUnitClass(unit.type) === def.filter) {
+              rangeBonus += (def.amount || 0);
+            }
+          }
+        }
+      }
+    }
+    const effectiveRange = unit.range + rangeBonus;
+
+    for (let dr = -effectiveRange; dr <= effectiveRange; dr++) {
+      for (let dc = -effectiveRange; dc <= effectiveRange; dc++) {
         const r = unit.row + dr;
         const c = unit.col + dc;
         if (!this.inBounds(r, c)) continue;
         if (dr === 0 && dc === 0) continue;
         const dist = this.distanceByPattern(unit, dr, dc);
-        if (dist <= unit.range) {
+        if (dist <= effectiveRange) {
           const isThrower = ((unit.rangePattern || "").toLowerCase() === "thrower");
           if (isThrower || this.hasLineOfSight(unit.row, unit.col, r, c)) res.push([r, c]);
         }
@@ -1239,6 +1345,51 @@ class Game {
       return;
     }
 
+    if (isMyTurn && this.biomeSelection) {
+      const myTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
+      const type = this.biomeSelection;
+      const biomeDef = window.Entities.biomeDefs[type];
+      
+      if (biomeDef && this.energy[myTeam] >= biomeDef.cost) {
+        // Only allow placement on non-nexus tiles (or as specified)
+        if (this.terrain[r][c] !== "nexus") {
+          this.energy[myTeam] -= biomeDef.cost;
+          this.biomes.push({
+            type: type,
+            r, c,
+            radius: biomeDef.radius,
+            team: myTeam,
+            duration: biomeDef.duration,
+            symbol: biomeDef.symbol,
+            desc: biomeDef.desc
+          });
+
+          this.biomeSelection = null;
+          const cancelBtn = document.getElementById("buy-cancel");
+          if (cancelBtn) cancelBtn.style.display = "none";
+          this.board.clearMarks();
+          this.renderEntities();
+          this.updateHUD();
+          this.renderBuyControls();
+          this.updateUnitPanel(null);
+
+          if (this.isMultiplayer) {
+            // Need a BIOME packet or use ABILITY if adapted, but let's assume a new packet is needed
+            // or just use syncState for simplicity in this turn-based context if needed.
+            // For now, let's use a SYNC_STATE broadcast if available.
+            window.Multiplayer.sendPacket('SYNC_STATE', { 
+              terrain: this.terrain,
+              nexusOwners: this.nexusOwners,
+              biomes: this.biomes,
+              basePositions: this.entities.filter(e => e.kind === 'base').map(e => ({ team: e.team, r: e.row, c: e.col }))
+            });
+          }
+          return;
+        }
+      }
+      return;
+    }
+
     if (this.abilityMode && this.abilityMode.unit && (this.isMultiplayer ? this.abilityMode.unit.team === this.playerTeam : this.abilityMode.unit.team === Config.TEAM.PLAYER)) {
       const u = this.abilityMode.unit;
       const def = this.abilityMode.def;
@@ -1310,7 +1461,8 @@ class Game {
         }
         this.playSfx && this.playSfx("ability");
         if (this.isMultiplayer) {
-          window.Multiplayer.sendPacket('ABILITY', { fromR, fromC, targetR: r, targetC: c, abilityName: def.name, ap: u.ap });
+          const payload = { fromR, fromC, targetR: r, targetC: c, abilityName: def.name, ap: u.ap };
+          window.Multiplayer.sendPacket('ABILITY', payload);
         }
       }
       const keepAbilityMode = !!(
@@ -1394,6 +1546,28 @@ class Game {
       }
     }
     this.board.clearMarks();
+
+    // Check for Biome info
+    const biome = this.biomes.find(b => {
+      if (!b) return false;
+      const dist = Math.max(Math.abs(r - b.r), Math.abs(c - b.c));
+      return dist <= (b.radius || 0);
+    });
+    if (!clickedEnt && biome) {
+      const def = window.Entities.biomeDefs[biome.type];
+      this.updateUnitPanel({
+        kind: "biome",
+        type: biome.type,
+        team: biome.team,
+        symbol: biome.symbol,
+        desc: def ? def.desc : "",
+        duration: biome.duration
+      });
+      const cell = this.board.getCell(r, c);
+      if (cell) cell.classList.add("selected");
+      return;
+    }
+
     if (clickedEnt) {
       this.abilityMode = null;
       this.selected = clickedEnt;
@@ -1560,7 +1734,7 @@ class Game {
 
   tickTimedStatusesForTeam(team) {
     for (const ent of this.entities) {
-      if (ent.kind !== "unit" || ent.team !== team) continue;
+      if (!ent || ent.kind !== "unit" || ent.team !== team) continue;
       if ((ent.hexTurns || 0) > 0) {
         ent.hexTurns = Math.max(0, (ent.hexTurns || 0) - 1);
         if (ent.hexTurns <= 0) ent.hexMarked = false;
@@ -1584,16 +1758,83 @@ class Game {
     this.resetAPForTeam(team);
     this.tickHazardsForTeam(team);
     this.tickTimedStatusesForTeam(team);
+    this.tickBiomes(team);
     this.applyHazardsForTeam(team);
     this.tickCooldowns(team);
     this.renderEntities();
+  }
+
+  tickBiomes(team) {
+    // 1. Decrement duration for biomes belonging to this team
+    for (let i = this.biomes.length - 1; i >= 0; i--) {
+      const b = this.biomes[i];
+      if (b && b.team === team) {
+        b.duration--;
+        if (b.duration <= 0) {
+          this.biomes.splice(i, 1);
+          continue;
+        }
+      }
+    }
+
+    // 2. Apply biome effects to units in range
+    // Biomes apply effects at the start of the turn for units of the same team
+    const biomeDefs = window.Entities.biomeDefs;
+    for (const ent of this.entities) {
+      if (!ent || ent.kind !== "unit" || ent.team !== team) continue;
+      
+      // Reset temporary buffs from biomes (if we had any, but we'll apply them each turn)
+      // For stat buffs like dmg/range, we might need a more robust way to handle them.
+      // But for heal/guard, we can just apply them.
+      
+      for (const b of this.biomes) {
+        if (!b || b.team !== team) continue;
+        const dist = Math.max(Math.abs(ent.row - b.r), Math.abs(ent.col - b.c));
+        if (dist <= (b.radius || 0)) {
+          const def = biomeDefs[b.type];
+          if (!def) continue;
+
+          if (def.effectType === "turn_start_heal") {
+            ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
+          } else if (def.effectType === "turn_start_support_buff") {
+            if (this.getUnitClass(ent.type) === "Support") {
+              ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
+              ent.ap = Math.min(ent.apMax, ent.ap + (def.amount || 1));
+            }
+          } else if (def.effectType === "turn_start_guard") {
+            ent.guardTurns = Math.max(ent.guardTurns || 0, def.amount || 1);
+          }
+          // Note: Stat buffs like Boxing Arena (+1 DMG) are handled in damage calculation
+        }
+      }
+    }
   }
 
   applyDamage(target, dmg, source) {
     const before = target.hp;
     const bonus = (target.hexMarked ? 1 : 0);
     const abilityBonus = (source && source.kind === "unit" && this.abilityMode && this.abilityMode.unit === source) ? ((source.level || 1) - 1) : 0;
-    let effectiveDmg = dmg + bonus + abilityBonus;
+    
+    // Biome buffs for source
+    let biomeDmgBonus = 0;
+    if (source && source.kind === "unit") {
+      const biomeDefs = window.Entities.biomeDefs;
+      for (const b of this.biomes) {
+        if (b && b.team === source.team) {
+          const dist = Math.max(Math.abs(source.row - b.r), Math.abs(source.col - b.c));
+          if (dist <= (b.radius || 0)) {
+            const def = biomeDefs[b.type];
+            if (def && def.effectType === "stat_buff" && def.stat === "dmg") {
+              if (!def.filter || this.getUnitClass(source.type) === def.filter) {
+                biomeDmgBonus += (def.amount || 0);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    let effectiveDmg = dmg + bonus + abilityBonus + biomeDmgBonus;
     if (target.kind === "unit" && (target.guardTurns || 0) > 0) {
       effectiveDmg = Math.max(1, effectiveDmg - 1);
     }
@@ -2351,9 +2592,9 @@ class Game {
 
   tickCooldowns(team) {
     for (const e of this.entities) {
-      if (e.kind === "unit" && e.team === team && e.abilityCooldowns) {
+      if (e && e.kind === "unit" && e.team === team && e.abilityCooldowns) {
         for (const k of Object.keys(e.abilityCooldowns)) {
-          e.abilityCooldowns[k] = Math.max(0, e.abilityCooldowns[k] - 1);
+          e.abilityCooldowns[k] = Math.max(0, (e.abilityCooldowns[k] || 0) - 1);
         }
       }
     }
@@ -2362,7 +2603,7 @@ class Game {
 
 Game.prototype.resetAPForTeam = function(team) {
   for (const e of this.entities) {
-    if (e.kind === "unit" && e.team === team) {
+    if (e && e.kind === "unit" && e.team === team) {
       const st = e.stunnedTurns || 0;
       if (st > 0) {
         e.ap = 0;
@@ -2376,12 +2617,12 @@ Game.prototype.resetAPForTeam = function(team) {
 
 Game.prototype.applyHazardsForTeam = function(team) {
   for (const e of this.entities) {
-    if (e.kind === "unit" && e.team === team) {
+    if (e && e.kind === "unit" && e.team === team) {
       const h = this.hazards[e.row][e.col];
       if (h && h.kind === "fire" && this.terrain[e.row][e.col] !== "water") {
         this.applyDamage(e, 2, null);
       }
-      if ((e.burnTurns || 0) > 0) {
+      if (e && (e.burnTurns || 0) > 0) {
         this.applyDamage(e, 1, null);
         e.burnTurns = Math.max(0, (e.burnTurns || 0) - 1);
       }
@@ -2767,7 +3008,7 @@ Game.prototype.applyNexusEffects = function(team) {
       teamName = team === this.playerTeam ? "Your" : "Enemy";
       oppName = opp === this.playerTeam ? "Your" : "Enemy";
     }
-    this.logEvent({ type: "nexus", msg: `${teamName} nexus(es) dealt ${owned} to ${oppName} base` });
+    this.logEvent({ type: "nexus", msg: `${teamName} nexus(es) dealt ${owned} damage to ${oppName} base` });
     this.renderEntities(); // Refresh base health bars
   }
 };
@@ -2777,9 +3018,9 @@ Game.prototype.spendEnergy = function(team, amount) {
   this.energy[team] -= amount;
   this.updateHUD();
   // Update Buy Controls to reflect purchase
-      this.renderBuyControls();
-      return true;
-    };
+  this.renderBuyControls();
+  return true;
+};
 
 Game.prototype.spawnUnitNearBase = function(team, type, forcedR, forcedC) {
   if (type === "Skeleton") {
@@ -2825,6 +3066,7 @@ Game.prototype.spawnUnitNearBase = function(team, type, forcedR, forcedC) {
 Game.prototype.syncState = function(data) {
   this.terrain = data.terrain;
   this.nexusOwners = data.nexusOwners || Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
+  this.biomes = data.biomes || [];
   this.entities = [];
   this.occupants = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
   
@@ -2952,7 +3194,6 @@ Game.prototype.applyUnitLevelUp = function(unit, level) {
  
 Game.prototype.awardExp = function(unit, amount, targetOpt) {
   if (!unit || unit.kind !== "unit") return;
-  if (unit.isBuilding) return;
   if (unit.level >= 3) return;
   const scaled = Math.max(0, amount);
   unit.exp += scaled;
@@ -2971,21 +3212,6 @@ Game.prototype.awardExp = function(unit, amount, targetOpt) {
 };
 
 Game.prototype.getBuyPositions = function(team, type) {
-  const def = type ? (Entities.unitDefs[type] || null) : null;
-  if (def && def.isBuilding) {
-    const res = [];
-    const startRow = team === Config.TEAM.PLAYER ? Math.floor(Config.ROWS / 2) : 0;
-    const endRow = team === Config.TEAM.PLAYER ? Config.ROWS : Math.floor(Config.ROWS / 2);
-    for (let r = startRow; r < endRow; r++) {
-      for (let c = 0; c < Config.COLS; c++) {
-        const t = this.terrain[r][c];
-        if (t === "water" || t === "wall" || t === "fortwall" || t === "bridge" || t === "nexus") continue;
-        if (this.occupants[r][c] != null) continue;
-        res.push([r, c]);
-      }
-    }
-    return res;
-  }
   const base = this.entities.find(e => e.kind === "base" && e.team === team);
   if (!base) return [];
   const res = [];
@@ -3010,14 +3236,27 @@ Game.prototype.renderBuyControls = function() {
   const wrap = document.getElementById("buy-controls");
   if (!wrap || !window.Entities || !window.Entities.unitDefs) return;
   const defs = window.Entities.unitDefs;
+  const biomeDefs = window.Entities.biomeDefs;
   const allUnits = Object.keys(defs).filter(t => !defs[t].hiddenFromShop);
+  const allBiomes = Object.keys(biomeDefs);
   const sortMode = this.shopFilters.sort === "class" ? "class" : "cost";
-  const classOrder = ["Fighter", "Marksman", "Assassin", "Support", "Tank", "Control", "Building", "Other"];
-  const getGroupValue = (type) => sortMode === "class" ? this.getUnitClass(type) : String(defs[type].cost || 0);
+  const classOrder = ["Fighter", "Marksman", "Assassin", "Support", "Tank", "Control", "Biomes", "Other"];
+  
+  const getUnitClass = (type) => {
+    if (biomeDefs[type]) return "Biomes";
+    return this.getUnitClass(type);
+  };
+
+  const getCost = (type) => {
+    if (biomeDefs[type]) return biomeDefs[type].cost;
+    return defs[type].cost || 0;
+  };
+
+  const shopItems = [...allUnits, ...allBiomes];
   const groupValues = sortMode === "class"
-    ? classOrder.filter(cls => allUnits.some(t => this.getUnitClass(t) === cls))
-    : Array.from(new Set(allUnits.map(t => String(defs[t].cost || 0)))).map(Number).sort((a, b) => a - b).map(String);
-  const options = sortMode === "class" ? classOrder.filter(cls => allUnits.some(t => this.getUnitClass(t) === cls)) : Array.from(new Set(allUnits.map(t => String(defs[t].cost || 0)))).map(Number).sort((a, b) => a - b).map(String);
+    ? classOrder.filter(cls => shopItems.some(t => getUnitClass(t) === cls))
+    : Array.from(new Set(shopItems.map(t => String(getCost(t))))).map(Number).sort((a, b) => a - b).map(String);
+  
   const selectedFilter = this.shopFilters.filterValue || "all";
   const frag = document.createDocumentFragment();
 
@@ -3026,14 +3265,10 @@ Game.prototype.renderBuyControls = function() {
   const filterSelect = document.createElement("select");
   filterSelect.className = "shop-filter-select";
   filterSelect.innerHTML = [`<option value="all">${sortMode === "class" ? "All Classes" : "All Costs"}</option>`]
-    .concat(options.map(opt => `<option value="${opt}">${opt}</option>`))
+    .concat(groupValues.map(opt => `<option value="${opt}">${opt}</option>`))
     .join("");
-  if (options.includes(selectedFilter) || selectedFilter === "all") {
-    filterSelect.value = selectedFilter;
-  } else {
-    filterSelect.value = "all";
-    this.shopFilters.filterValue = "all";
-  }
+  filterSelect.value = selectedFilter;
+  
   const sortSelect = document.createElement("select");
   sortSelect.className = "shop-filter-select";
   sortSelect.innerHTML = `
@@ -3041,6 +3276,7 @@ Game.prototype.renderBuyControls = function() {
     <option value="class">Sort by Class</option>
   `;
   sortSelect.value = sortMode;
+  
   filterSelect.addEventListener("change", () => {
     this.shopFilters.filterValue = filterSelect.value || "all";
     this.renderBuyControls();
@@ -3055,6 +3291,8 @@ Game.prototype.renderBuyControls = function() {
   frag.appendChild(toolbar);
 
   groupValues.forEach(groupValue => {
+    if (selectedFilter !== "all" && selectedFilter !== groupValue) return;
+
     const group = document.createElement("div");
     group.className = "buy-group";
     const header = document.createElement("button");
@@ -3063,73 +3301,104 @@ Game.prototype.renderBuyControls = function() {
     header.textContent = sortMode === "class" ? groupValue : `Cost ${groupValue}`;
     const list = document.createElement("div");
     list.className = "group-list";
-    list.style.display = "none";
+    list.style.display = (selectedFilter !== "all") ? "block" : "none";
     header.addEventListener("click", () => {
       list.style.display = list.style.display === "none" ? "block" : "none";
     });
+    
     const myTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
-    const remaining = allUnits.filter(t => !this.purchasedUnits[myTeam].has(t));
-    const grouped = remaining.filter(t => getGroupValue(t) === groupValue);
-    const filterValue = this.shopFilters.filterValue || "all";
-    const filtered = grouped.filter(t => filterValue === "all" || getGroupValue(t) === filterValue);
-    filtered.sort((a, b) => {
-      if (sortMode === "class") {
-        const costDelta = (defs[a].cost || 0) - (defs[b].cost || 0);
-        if (costDelta !== 0) return costDelta;
-      }
-      return a.localeCompare(b);
-    });
-    filtered.forEach(t => {
-      const def = Entities.unitDefs[t];
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "unit-item";
-      const roleSummary = this.getShopRoleSummary(t);
-      const className = this.getUnitClass(t);
-      item.innerHTML = `<div class="unit-title">${def.symbol} ${t}</div><div class="unit-desc-small">${roleSummary}</div>`;
-      item.title = `${className}: ${roleSummary}`;
-      item.addEventListener("click", () => {
-        if (this.buySelection && this.buySelection.type === t) {
-          this.buySelection = null;
+    const remainingUnits = allUnits.filter(t => !this.purchasedUnits[myTeam].has(t));
+    const items = [...remainingUnits, ...allBiomes];
+    const grouped = items.filter(t => (sortMode === "class" ? getUnitClass(t) : String(getCost(t))) === groupValue);
+
+    grouped.forEach(type => {
+      const isBiome = !!biomeDefs[type];
+      const def = isBiome ? biomeDefs[type] : defs[type];
+      const btn = document.createElement("button");
+      btn.className = "unit-item";
+      
+      const energy = this.energy[myTeam];
+      const canAfford = energy >= (def.cost || 0);
+      if (!canAfford) btn.classList.add("low-energy");
+
+      btn.innerHTML = `<div class="unit-title">${def.symbol} ${type}</div><div class="unit-desc-small">${isBiome ? def.desc : this.getShopRoleSummary(type)}</div>`;
+      
+      btn.addEventListener("click", () => {
+        if (isBiome) {
+          // Allow selection even if low energy to see details
+          this.buySelection = null; 
+          this.biomeSelection = type;
+          this.logEvent({ type: "info", msg: `Selected ${type}. ${canAfford ? "Click anywhere to place it!" : "Not enough energy to place."}` });
+          
+          // Update unit panel for Biome
+          this.updateUnitPanel({
+            kind: "biome_preview",
+            type: type,
+            symbol: def.symbol,
+            desc: def.desc,
+            cost: def.cost,
+            duration: def.duration,
+            color: def.color
+          });
+
           this.board.clearMarks();
-          const cancelBtn = document.getElementById("buy-cancel");
-          if (cancelBtn) cancelBtn.style.display = "none";
-          this.updateUnitPanel(null);
-          item.classList.remove("selected");
-          return;
+          if (canAfford) {
+            // Allow placement anywhere (for biomes)
+            const pos = [];
+            for (let r = 0; r < Config.ROWS; r++) {
+              for (let c = 0; c < Config.COLS; c++) {
+                if (this.terrain[r][c] !== "nexus") pos.push([r, c]);
+              }
+            }
+            this.board.markPositions(pos, "buy-hl");
+          }
+        } else {
+          // Units: Allow selection to see details
+          this.biomeSelection = null; 
+          this.buySelection = { type: type, cost: def.cost };
+          
+          this.board.clearMarks();
+          if (canAfford) {
+            const pos = this.getBuyPositions(myTeam, type);
+            this.board.markPositions(pos, "buy-hl");
+          }
+          
+          // Update unit panel for Unit preview
+          const preview = {
+            kind: "unit",
+            team: myTeam,
+            type: type,
+            row: 0, col: 0,
+            hp: def.hp, maxHp: def.hp, dmg: def.dmg, range: def.range, move: def.move,
+            symbol: def.symbol, ability: def.ability, rangePattern: def.rangePattern, movePattern: def.movePattern || "orthogonal",
+            abilityCooldowns: {}, runes: [], apMax: def.apMax || 2, ap: def.apMax || 2,
+          };
+          this.updateUnitPanel(preview);
         }
-        this.buySelection = { type: t, cost: def.cost };
-        const pos = this.getBuyPositions(myTeam, t);
-        this.board.clearMarks();
-        this.board.markPositions(pos, "buy-hl");
+        
+        document.querySelectorAll(".unit-item.selected").forEach(el => el.classList.remove("selected"));
+        btn.classList.add("selected");
         const cancelBtn = document.getElementById("buy-cancel");
         if (cancelBtn) cancelBtn.style.display = "inline-block";
-        document.querySelectorAll(".unit-item.selected").forEach(el => el.classList.remove("selected"));
-        item.classList.add("selected");
-        const preview = {
-          kind: "unit",
-          team: myTeam,
-          type: t,
-          row: 0, col: 0,
-          hp: def.hp, maxHp: def.hp, dmg: def.dmg, range: def.range, move: def.move,
-          symbol: def.symbol, ability: def.ability, rangePattern: def.rangePattern, movePattern: def.movePattern || "orthogonal",
-          abilityCooldowns: {}, runes: [], apMax: def.apMax || 2, ap: def.apMax || 2,
-        };
-        this.updateUnitPanel(preview);
       });
-      list.appendChild(item);
+      list.appendChild(btn);
     });
-    if (list.childElementCount === 0) return;
-    group.appendChild(header);
-    group.appendChild(list);
-    frag.appendChild(group);
+
+    if (grouped.length > 0) {
+      group.appendChild(header);
+      group.appendChild(list);
+      frag.appendChild(group);
+    }
   });
+
   wrap.innerHTML = "";
   wrap.appendChild(frag);
+
   const cancelBtn = document.getElementById("buy-cancel");
   if (cancelBtn) {
     cancelBtn.onclick = () => {
       this.buySelection = null;
+      this.biomeSelection = null;
       this.board.clearMarks();
       cancelBtn.style.display = "none";
       document.querySelectorAll(".unit-item.selected").forEach(el => el.classList.remove("selected"));
@@ -3143,7 +3412,6 @@ Game.prototype.chooseAIPurchaseType = function() {
   const affordable = Object.keys(defs).filter(t => {
     if (t === "Skeleton") return false;
     if (defs[t].hiddenFromShop) return false;
-    if (defs[t].isBuilding) return false;
     return this.energy[Config.TEAM.AI] >= (defs[t].cost || 0);
   });
   if (affordable.length === 0) return null;

@@ -694,6 +694,10 @@ body {
 .construction-site {
   background-image: linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(15, 23, 42, 0));
 }
+.cell.biome-player { background: rgba(59, 130, 246, 0.15); box-shadow: inset 0 0 10px rgba(59, 130, 246, 0.2); }
+.cell.biome-ai { background: rgba(239, 68, 68, 0.15); box-shadow: inset 0 0 10px rgba(239, 68, 68, 0.2); }
+.biome-icon { font-size: 16px; position: absolute; bottom: 2px; right: 2px; pointer-events: none; z-index: 5; }
+
 .hazard-fire {
   background-image: radial-gradient(circle at 50% 45%, rgba(251, 146, 60, 0.45), rgba(127, 29, 29, 0.1));
 }

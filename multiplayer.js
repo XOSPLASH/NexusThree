@@ -66,10 +66,11 @@ window.Multiplayer = (function() {
       connection.on('open', () => {
         setTimeout(() => {
           sendPacket('SYNC_STATE', { 
-            terrain: game.terrain,
-            nexusOwners: game.nexusOwners,
-            basePositions: game.entities.filter(e => e.kind === 'base').map(e => ({ team: e.team, r: e.row, c: e.col }))
-          });
+      terrain: game.terrain,
+      nexusOwners: game.nexusOwners,
+      biomes: game.biomes,
+      basePositions: game.entities.filter(e => e.kind === 'base').map(e => ({ team: e.team, r: e.row, c: e.col }))
+    });
         }, 500);
       });
     });

@@ -1,4 +1,50 @@
 const unitDefs = {};
+const biomeDefs = {
+  "Boxing Arena": {
+    radius: 1,
+    duration: 4,
+    cost: 4,
+    symbol: "🥊",
+    color: "#f87171", // Reddish
+    desc: "A gritty combat zone where fighters excel. Increases damage by 1 for all Fighter units within the area.",
+    effectType: "stat_buff",
+    stat: "dmg",
+    amount: 1,
+    filter: "Fighter"
+  },
+  "Watchtower": {
+    radius: 1,
+    duration: 5,
+    cost: 6,
+    symbol: "🗼",
+    color: "#60a5fa", // Blueish
+    desc: "A high vantage point for sharpshooters. Increases attack range by 1 for all Marksman units within the area.",
+    effectType: "stat_buff",
+    stat: "range",
+    amount: 1,
+    filter: "Marksman"
+  },
+  "Sanctum": {
+    radius: 1,
+    duration: 5,
+    cost: 6,
+    symbol: "⛪",
+    color: "#fbbf24", // Golden
+    desc: "A holy sanctuary for healers. Heals 1 HP and grants 1 AP to all Support units within the area at the start of every turn.",
+    effectType: "turn_start_support_buff",
+    amount: 1
+  },
+  "Forge": {
+    radius: 1,
+    duration: 5,
+    cost: 5,
+    symbol: "⚒️",
+    color: "#94a3b8", // Metallic Gray
+    desc: "A heavy industrial zone that reinforces armor. Grants 1 turn of Guard (damage reduction) to all allied units within the area at the start of every turn.",
+    effectType: "turn_start_guard",
+    amount: 1
+  }
+};
 
 const makeBase = (team, row, col) => ({
   kind: "base",
@@ -41,7 +87,6 @@ const makeUnit = (team, type, row, col) => ({
   siegeTurns: 0,
   stuck: false,
   isBeast: false,
-  isBuilding: !!unitDefs[type].isBuilding,
   leveling: unitDefs[type].leveling || null,
 });
 
@@ -53,10 +98,9 @@ const defaultLeveling = {
   },
 };
 
-window.Entities = { unitDefs, makeBase, makeUnit };
+window.Entities = { unitDefs, biomeDefs, makeBase, makeUnit };
 window.Entities.getLevelingProfile = function(type) {
   const def = unitDefs[type];
   if (!def) return defaultLeveling;
-  if (def.isBuilding) return null;
   return def.leveling || defaultLeveling;
 };
