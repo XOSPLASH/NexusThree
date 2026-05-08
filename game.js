@@ -27,6 +27,8 @@ class Game {
     this.purchasedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
     this.isMultiplayer = false;
     this.playerTeam = Config.TEAM.PLAYER;
+    this.shadowRealmView = false;
+    this.previewBiomeCenter = null;
     this.init();
   }
 
@@ -49,6 +51,39 @@ class Game {
     if (window.Multiplayer) {
       window.Multiplayer.init(this);
     }
+    // Shadow Realm toggle (top-right). Controlled by feature flag.
+    if (Config.FEATURES && Config.FEATURES.shadowRealm) {
+      if (!document.getElementById('shadow-toggle')) {
+        const btn = document.createElement('button');
+        btn.id = 'shadow-toggle';
+        btn.className = 'shadow-toggle-btn';
+        btn.title = 'Switch Realm View';
+        // place next to board in the turnbar when available, fallback to body
+        const turnbar = document.querySelector('.turnbar');
+        if (turnbar) turnbar.appendChild(btn);
+        else document.body.appendChild(btn);
+        btn.onclick = () => {
+          this.shadowRealmView = !this.shadowRealmView;
+          btn.classList.toggle('active', this.shadowRealmView);
+          this.updateShadowToggleButton();
+          this.applyBoardPerspective();
+          this.renderEntities();
+        };
+        this.updateShadowToggleButton();
+      }
+    }
+  }
+
+  updateShadowToggleButton() {
+    const btn = document.getElementById("shadow-toggle");
+    if (!btn) return;
+    if (this.shadowRealmView) {
+      btn.textContent = "Normal Realm";
+      btn.title = "Switch to Normal Realm View";
+    } else {
+      btn.textContent = "Shadow Realm";
+      btn.title = "Switch to Shadow Realm View";
+    }
   }
 
   repositionMPUI() {
@@ -68,6 +103,7 @@ class Game {
     const grid = document.getElementById("grid");
     if (!grid) return;
     grid.classList.toggle("board-flipped", this.isMultiplayer && this.playerTeam === Config.TEAM.AI);
+    grid.classList.toggle("shadow-view", !!this.shadowRealmView);
   }
 
   getDisplayEntitySymbol(ent) {
@@ -82,7 +118,49 @@ class Game {
     return [Config.ROWS - row, col + 1];
   }
 
+  getBiomeDistance(rowA, colA, rowB, colB) {
+    const dr = rowA - rowB;
+    const dc = colA - colB;
+    return Math.hypot(dr, dc);
+  }
+
+  isWithinBiomeRadius(rowA, colA, rowB, colB, radius) {
+    return this.getBiomeDistance(rowA, colA, rowB, colB) <= (radius + 0.35);
+  }
+
+  getEffectiveApMax(unit) {
+    if (!unit || unit.kind !== "unit") return unit && unit.apMax ? unit.apMax : 0;
+    return Math.max(0, (unit.apMax || 0) + (unit.apMaxBonus || 0));
+  }
+
+  toBiomeTint(color, alpha) {
+    if (!color) return `rgba(99, 102, 241, ${alpha})`;
+    if (color.startsWith("#")) {
+      const hex = color.slice(1);
+      const raw = hex.length === 3
+        ? hex.split("").map((ch) => ch + ch).join("")
+        : hex;
+      const num = Number.parseInt(raw, 16);
+      if (!Number.isNaN(num)) {
+        const r = (num >> 16) & 255;
+        const g = (num >> 8) & 255;
+        const b = num & 255;
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      }
+    }
+    if (color.startsWith("rgb(")) {
+      const inner = color.slice(4, -1);
+      return `rgba(${inner}, ${alpha})`;
+    }
+    if (color.startsWith("rgba(")) {
+      return color.replace(/,\s*[\d.]+\)$/, `, ${alpha})`);
+    }
+    return color;
+  }
+
   getShopRoleSummary(type) {
+    const def = window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[type];
+    if (def && def.role) return def.role;
     const roles = {
       Warrior: "Frontline Bruiser",
       Archer: "Long-Range Skirmisher",
@@ -105,21 +183,28 @@ class Game {
       Watchtower: "Long-Range Defense",
       Sanctum: "Healing Support",
       Forge: "Aegis Support",
+      Tidewalker: "Water Skirmisher",
+      Shade: "Shadow Assassin",
     };
     return roles[type] || "Battle Unit";
   }
 
   getUnitClass(type) {
+    const def = window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[type];
+    if (def && def.class) return def.class;
     const classes = {
       Warrior: "Fighter",
       Berserker: "Fighter",
       Avenger: "Fighter",
+      Druid: "Fighter",
       Paladin: "Tank",
       Sentinel: "Tank",
       Archer: "Marksman",
+      Tidewalker: "Marksman",
       Ballista: "Marksman",
+      Shade: "Assassin",
       Rogue: "Assassin",
-      Magnet: "Assassin",
+      Magnet: "Control",
       Hex: "Control",
       Mage: "Control",
       Firecaller: "Control",
@@ -127,7 +212,6 @@ class Game {
       Necromancer: "Control",
       Alchemist: "Support",
       Cleric: "Support",
-      Druid: "Support",
       Builder: "Support",
       Skeleton: "Support",
     };
@@ -174,8 +258,8 @@ class Game {
       cell.style.borderColor = "";
       cell.classList.remove(
         "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","terrain-nexus-player","terrain-nexus-ai",
-        "hazard-fire","hazard-sludge","construction-site","biome-player","biome-ai",
-        "unit-player","unit-ai","status-hex","status-stuck","token-player","token-ai",
+          "hazard-fire","hazard-sludge","construction-site","biome-player","biome-ai",
+          "unit-player","unit-ai","status-hex","status-stuck","token-player","token-ai","in-shadow",
         "move-hl","attack-hl","heal-hl","ability-hl","attack-range-hl","ability-range-max","selected-empty","selected-target-hl","buy-hl"
       );
     });
@@ -256,10 +340,11 @@ class Game {
         for (let dc = -radius; dc <= radius; dc++) {
           const rr = biome.r + dr, cc = biome.c + dc;
           if (!this.inBounds(rr, cc)) continue;
+          if (!this.isWithinBiomeRadius(rr, cc, biome.r, biome.c, radius)) continue;
           const cell = this.board.getCell(rr, cc);
           if (!cell) continue;
           
-          cell.style.backgroundColor = color.replace(")", ", 0.2)").replace("rgb", "rgba");
+          cell.style.backgroundColor = this.toBiomeTint(color, 0.2);
           cell.classList.add(this.isFriendlyTeam(biome.team) ? "biome-player" : "biome-ai");
           
           // Only show symbol on the center tile
@@ -278,16 +363,75 @@ class Game {
     }
 
     // Units and bases
+    const viewerTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
+    const viewerHasShadow = this.entities.some(e => e.team === viewerTeam && e.inShadowRealm);
     for (const ent of this.entities) {
       if (!ent || ent.row == null || ent.col == null) continue;
       const cell = this.board.getCell(ent.row, ent.col);
       if (!cell) continue;
+
+      // Shadow visibility: skip entities in shadow that the viewer cannot see
+      if (ent.inShadowRealm) {
+        // In shadow-view the viewer still must have shadow presence to see the realm
+        if (!this.isEntityVisibleToUnit(null, ent)) continue;
+      }
+      // If Shadow Realm view is toggled, hide non-shadow tiles/entities (except bases — keep bases visible for orientation)
+      if (this.shadowRealmView && !ent.inShadowRealm && ent.kind !== 'base') continue;
+
+      // Mark base entities for optional special styling; units keep the unit-player/unit-ai classes
+      if (ent.kind === 'base') cell.classList.add('entity-base');
       cell.classList.add(this.isFriendlyTeam(ent.team) ? "unit-player" : "unit-ai");
 
       const span = document.createElement("span");
       span.className = `token ${this.isFriendlyTeam(ent.team) ? "token-player" : "token-ai"}`;
       span.textContent = this.getDisplayEntitySymbol(ent);
+      // Mark and style shadow units when visible
+      if (ent.inShadowRealm) {
+        cell.classList.add('in-shadow');
+        span.classList.add('shadow-token');
+      }
       cell.appendChild(span);
+
+      // Water Walker visual indicator (active when standing on water)
+      try {
+        const terr = this.terrain[ent.row] && this.terrain[ent.row][ent.col];
+        const unitDef = (ent.kind === "unit" && window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[ent.type]) || null;
+        const isWaterWalker = !!(ent.waterWalker || (unitDef && unitDef.waterWalker));
+        if (isWaterWalker && terr === "water") {
+          cell.classList.add('water-walker-active');
+          const wBadge = document.createElement('span');
+          wBadge.className = 'water-walker-badge';
+          wBadge.textContent = '💧';
+          cell.appendChild(wBadge);
+        }
+      } catch(e) {}
+
+      // Biome eligibility indicator (existing biomes and preview)
+      let eligible = false;
+      for (const b of this.biomes) {
+        if (!b) continue;
+        const bDef = window.Entities && window.Entities.biomeDefs && window.Entities.biomeDefs[b.type];
+        if (!bDef) continue;
+        if (this.isWithinBiomeRadius(ent.row, ent.col, b.r, b.c, b.radius || 0) && b.team === ent.team) {
+          if (!bDef.filter || this.getUnitClass(ent.type) === bDef.filter) {
+            eligible = true; break;
+          }
+        }
+      }
+      if (!eligible && this.biomeSelection && this.previewBiomeCenter) {
+        const pbDef = window.Entities && window.Entities.biomeDefs && window.Entities.biomeDefs[this.biomeSelection];
+        if (pbDef && pbDef.filter && this.getUnitClass(ent.type) === pbDef.filter) {
+          if (this.isWithinBiomeRadius(ent.row, ent.col, this.previewBiomeCenter[0], this.previewBiomeCenter[1], pbDef.radius || 0)) eligible = true;
+        }
+      }
+      if (eligible) {
+        cell.classList.add('biome-eligible');
+        const bBadge = document.createElement('span');
+        bBadge.className = 'biome-eligible-badge';
+        bBadge.textContent = '★';
+        cell.appendChild(bBadge);
+      }
+
       if (ent.hexMarked) {
         const badge = document.createElement("span");
         badge.className = "status-badge hex-badge";
@@ -351,9 +495,11 @@ class Game {
           for (let dr = -radius; dr <= radius; dr++) {
             for (let dc = -radius; dc <= radius; dc++) {
               const rr = r + dr, cc = c + dc;
-              if (this.inBounds(rr, cc)) area.push([rr, cc]);
+              if (this.inBounds(rr, cc) && this.isWithinBiomeRadius(rr, cc, r, c, radius)) area.push([rr, cc]);
             }
           }
+          // track preview center so UI can mark eligible units
+          this.previewBiomeCenter = [r, c];
           this.board.clearMarks();
           // Re-mark available spots
           const pos = [];
@@ -369,6 +515,9 @@ class Game {
           // Mark preview area
           this.board.markPositions(area, "ability-hl");
         }
+      } else {
+        // clear preview center when not previewing a biome
+        this.previewBiomeCenter = null;
       }
     });
 
@@ -591,18 +740,26 @@ class Game {
     const statuses = [];
     const push = (label, turns) => {
       const count = Number(turns || 0);
-      if (count > 0) statuses.push([label, `${count}T`]);
+      if (count > 0) statuses.push(`${label} (${count})`);
     };
-    push("Beast Form", unit.isBeast ? Math.max(1, unit.beastTurns || 0) : 0);
-    push("Hexed", unit.hexMarked ? Math.max(1, unit.hexTurns || 0) : 0);
-    push("Guarded", unit.guardTurns);
-    push("Sieged", unit.siegeTurns);
-    push("Burning", unit.burnTurns);
-    push("Stunned", unit.stunnedTurns);
+    if (unit.isBeast && (unit.beastTurns || 0) > 0) push("Beast Form", Math.max(1, unit.beastTurns || 0));
+    if (unit.hexMarked && (unit.hexTurns || 0) > 0) push("Hexed", Math.max(1, unit.hexTurns || 0));
+    if (unit.guardTurns && unit.guardTurns > 0) {
+      const gv = (unit.guardValue != null && unit.guardValue !== 0) ? unit.guardValue : 1;
+      const label = (gv > 0 && gv < 1) ? `Guarded (-${Math.round(gv * 100)}%)` : `Guarded (-${gv} dmg)`;
+      statuses.push(`${label} (${unit.guardTurns})`);
+    }
+    if (unit.inShadowRealm && (unit.shadowTurns || 0) > 0) {
+      statuses.push(`Shadowed (${unit.shadowTurns})`);
+    }
+    if (unit.siegeTurns && unit.siegeTurns > 0) push("Sieged", unit.siegeTurns);
+    if (unit.burnTurns && unit.burnTurns > 0) push("Burning", unit.burnTurns);
+    if (unit.stunnedTurns && unit.stunnedTurns > 0) push("Stunned", unit.stunnedTurns);
+    if ((unit.apMaxBonus || 0) > 0) statuses.push(`Sanctified (+${unit.apMaxBonus} AP Max)`);
     if (unit.stuck) {
       const hazard = this.hazards && this.hazards[unit.row] && this.hazards[unit.row][unit.col];
       const turns = hazard && hazard.kind === "sludge" ? hazard.turns : 0;
-      statuses.push(["Trapped", turns > 0 ? `${turns}T` : "Mire"]);
+      statuses.push(turns > 0 ? `Trapped (${turns})` : `Trapped (Mire)`);
     }
     return statuses;
   }
@@ -770,24 +927,29 @@ class Game {
 
       // Stats
       const base = Entities.unitDefs[ent.type] || {};
+      const dmgBonus = this.getBiomeStatBonus(ent, 'dmg');
+      const rangeBonus = this.getBiomeStatBonus(ent, 'range');
+      const displayedDmg = ent.dmg + dmgBonus;
+      const displayedRange = ent.range + rangeBonus;
+      const effectiveApMax = this.getEffectiveApMax(ent);
       const stats = [
         ["HP", `${ent.hp}/${ent.maxHp}`, base.hp],
-        ["Damage", `${ent.dmg}`, base.dmg],
-        ["Range", `${ent.range}`, base.range, this.formatPatternLabel(ent.rangePattern || "square")],
+        ["Damage", `${displayedDmg}`, base.dmg],
+        ["Range", `${displayedRange}`, base.range, this.formatPatternLabel(ent.rangePattern || "square")],
         ["Movement", `${ent.move}`, base.move, this.formatPatternLabel(ent.movePattern || "orthogonal")],
-        ["AP", `${ent.ap}/${ent.apMax}`],
+        ["AP", `${ent.ap}/${effectiveApMax}`],
       ];
       for (const [k, v, b, sub] of stats) {
         const li = document.createElement("li");
         if (k === "AP") {
-          const pips = Array.from({ length: ent.apMax }, (_, i) => `<span class="ap-pip${i < ent.ap ? '' : ' used'}"></span>`).join('');
+          const pips = Array.from({ length: effectiveApMax }, (_, i) => `<span class="ap-pip${i < ent.ap ? '' : ' used'}"></span>`).join('');
           li.className = "stat-card stat-card-ap";
           li.innerHTML = `
             <span class="stat-key">AP</span>
             <span class="stat-value">${v} <span class="ap-pips">${pips}</span></span>
           `;
         } else {
-          const cur = k === "HP" ? ent.hp : (k === "Damage" ? ent.dmg : (k === "Range" ? ent.range : ent.move));
+          const cur = k === "HP" ? ent.hp : (k === "Damage" ? displayedDmg : (k === "Range" ? displayedRange : ent.move));
           const delta = (typeof b === "number") ? (cur - b) : 0;
           const subLabel = sub ? `<span class="muted-sub">${sub}</span>` : "";
           li.className = `stat-card${sub ? " stat-card-pattern" : ""}`;
@@ -810,7 +972,7 @@ class Game {
         statusLabel.textContent = "Status";
         const statusPanel = document.createElement("div");
         statusPanel.className = "status-panel";
-        statusPanel.innerHTML = statuses.map(([label, turns]) => `<span class="status-pill">${label} - ${turns}</span>`).join("");
+        statusPanel.innerHTML = statuses.map(s => `<span class="status-pill">${s}</span>`).join("");
         statusWrap.appendChild(statusLabel);
         statusWrap.appendChild(statusPanel);
         unitPanel.appendChild(statusWrap);
@@ -1065,6 +1227,41 @@ class Game {
     return res;
   }
 
+  getBiomeStatBonus(unit, stat) {
+    if (!unit || !stat) return 0;
+    let bonus = 0;
+    const biomeDefs = window.Entities && window.Entities.biomeDefs;
+    if (!biomeDefs) return 0;
+    for (const b of this.biomes) {
+      if (!b || b.team !== unit.team) continue;
+      if (!this.isWithinBiomeRadius(unit.row, unit.col, b.r, b.c, b.radius || 0)) continue;
+      const def = biomeDefs[b.type];
+      if (def && def.effectType === "stat_buff" && def.stat === stat) {
+        if (!def.filter || this.getUnitClass(unit.type) === def.filter) {
+          bonus += (def.amount || 0);
+        }
+      }
+    }
+    return bonus;
+  }
+
+  isEntityVisibleToUnit(attacker, target) {
+    if (!target) return false;
+    // Non-shadow entities are always visible
+    if (!target.inShadowRealm) return true;
+    // Viewer must have clicked the shadow toggle to view the realm
+    if (!this.shadowRealmView) return false;
+    const viewerTeam = attacker ? attacker.team : (this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER);
+    const viewerHasShadow = this.entities.some(e => e.team === viewerTeam && e.inShadowRealm);
+    const targetTeamHasShadow = this.entities.some(e => e.team === target.team && e.inShadowRealm);
+    // Only players with units in the Shadow Realm can see Shadow units
+    if (!viewerHasShadow) return false;
+    // Allies are always visible to each other in the realm when viewer has shadow units
+    if (viewerTeam === target.team) return true;
+    // Enemies are visible only if both teams have shadow presence
+    return targetTeamHasShadow;
+  }
+
   showActionHints(unit) {
     this.board.clearMarks();
     this.board.markSelected(unit.row, unit.col);
@@ -1103,6 +1300,8 @@ class Game {
     if (hSrc && hSrc.kind === "sludge") return [];
     const res = [];
     const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+    // allow certain units to traverse water
+    const canWalkWater = !!(unit && (unit.waterWalker || (window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[unit.type] && window.Entities.unitDefs[unit.type].waterWalker)) && (Config.FEATURES && Config.FEATURES.marksmanWaterWalker));
     for (const [dr, dc] of dirs) {
       for (let s = 1; s <= maxSteps; s++) {
         const r = unit.row + dr * s;
@@ -1116,13 +1315,13 @@ class Game {
           // Check the two tiles that form the "gap" for this diagonal step
           const corner1 = this.terrain[rSide + dr][cSide];
           const corner2 = this.terrain[rSide][cSide + dc];
-          const isBlocked1 = corner1 === "wall" || corner1 === "water" || corner1 === "fortwall";
-          const isBlocked2 = corner2 === "wall" || corner2 === "water" || corner2 === "fortwall";
+          const isBlocked1 = corner1 === "wall" || corner1 === "fortwall" || (corner1 === "water" && !canWalkWater);
+          const isBlocked2 = corner2 === "wall" || corner2 === "fortwall" || (corner2 === "water" && !canWalkWater);
           if (isBlocked1 && isBlocked2) break;
         }
 
         const terr = this.terrain[r][c];
-        if (terr === "wall" || terr === "water" || terr === "fortwall") break;
+        if (terr === "wall" || terr === "fortwall" || (terr === "water" && !canWalkWater)) break;
         if (this.occupants[r][c] != null) break;
         
         // Sludge entry restriction
@@ -1138,27 +1337,13 @@ class Game {
   getAttackTargets(unit) {
     if (unit.ap < 1) return [];
     const res = [];
-    
-    // Biome range bonus
-    let rangeBonus = 0;
-    const biomeDefs = window.Entities.biomeDefs;
-    for (const b of this.biomes) {
-      if (b && b.team === unit.team) {
-        const dist = Math.max(Math.abs(unit.row - b.r), Math.abs(unit.col - b.c));
-        if (dist <= (b.radius || 0)) {
-          const def = biomeDefs[b.type];
-          if (def && def.effectType === "stat_buff" && def.stat === "range") {
-            if (!def.filter || this.getUnitClass(unit.type) === def.filter) {
-              rangeBonus += (def.amount || 0);
-            }
-          }
-        }
-      }
-    }
-    const effectiveRange = unit.range + rangeBonus;
+    // Biome range bonus (computed centrally)
+    const effectiveRange = unit.range + this.getBiomeStatBonus(unit, 'range');
 
     for (const ent of this.entities) {
-      if (ent.team === unit.team) continue;
+      if (!ent || ent.team === unit.team) continue;
+      // Only allow interactions within the same realm (shadow vs normal)
+      if ((!!ent.inShadowRealm) !== (!!unit.inShadowRealm)) continue;
       const dist = this.distanceByPattern(unit, ent.row - unit.row, ent.col - unit.col);
       if (dist <= effectiveRange) res.push([ent.row, ent.col]);
     }
@@ -1197,23 +1382,8 @@ class Game {
   getAttackRangeTiles(unit) {
     const res = [];
     
-    // Biome range bonus
-    let rangeBonus = 0;
-    const biomeDefs = window.Entities.biomeDefs;
-    for (const b of this.biomes) {
-      if (b && b.team === unit.team) {
-        const dist = Math.max(Math.abs(unit.row - b.r), Math.abs(unit.col - b.c));
-        if (dist <= (b.radius || 0)) {
-          const def = biomeDefs[b.type];
-          if (def && def.effectType === "stat_buff" && def.stat === "range") {
-            if (!def.filter || this.getUnitClass(unit.type) === def.filter) {
-              rangeBonus += (def.amount || 0);
-            }
-          }
-        }
-      }
-    }
-    const effectiveRange = unit.range + rangeBonus;
+    // Biome range bonus (use helper so UI and logic stay in sync)
+    const effectiveRange = unit.range + this.getBiomeStatBonus(unit, 'range');
 
     for (let dr = -effectiveRange; dr <= effectiveRange; dr++) {
       for (let dc = -effectiveRange; dc <= effectiveRange; dc++) {
@@ -1310,10 +1480,15 @@ class Game {
   }
 
   async onCellClicked(r, c) {
-    const clickedEnt = this.occupants[r][c];
+    let clickedEnt = this.occupants[r][c];
     const isPlayerTurn = this.turn === Config.TEAM.PLAYER;
     const isMyTurn = this.isMultiplayer ? (this.turn === this.playerTeam) : isPlayerTurn;
     if (this.isGameOver()) return;
+
+    // Respect Shadow Realm visibility: treat hidden shadow units as empty tiles for the viewer
+    if (clickedEnt && clickedEnt.inShadowRealm && !this.isEntityVisibleToUnit(null, clickedEnt)) {
+      clickedEnt = null;
+    }
 
     if (isMyTurn && this.buySelection) {
       const myTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
@@ -1363,6 +1538,13 @@ class Game {
             symbol: biomeDef.symbol,
             desc: biomeDef.desc
           });
+
+            // Apply biome effects immediately when placed.
+            const placed = this.biomes[this.biomes.length - 1];
+            this.applyBiomeToUnits(placed);
+
+            // clear preview marker
+            this.previewBiomeCenter = null;
 
           this.biomeSelection = null;
           const cancelBtn = document.getElementById("buy-cancel");
@@ -1451,6 +1633,13 @@ class Game {
           window.Multiplayer.sendPacket('ABILITY', { fromR, fromC, abilityName: def.name, ap: u.ap });
         }
       } else if (targets.includes(key)) {
+        const targetEnt = this.occupants[r][c] || this.entities.find(e => e.row === r && e.col === c);
+        if (targetEnt && (targetEnt.kind === "unit" || targetEnt.kind === "base")) {
+          // Disallow cross-realm interactions
+          if ((!!targetEnt.inShadowRealm) !== (!!u.inShadowRealm)) return;
+          // Disallow targeting hidden shadow enemies (UI visibility rule)
+          if (targetEnt.inShadowRealm && targetEnt.team !== u.team && !this.isEntityVisibleToUnit(u, targetEnt)) return;
+        }
         const fromR = u.row, fromC = u.col;
         def.perform(this, u, r, c);
         this.animateAbilityCast(u, def, r, c);
@@ -1550,8 +1739,7 @@ class Game {
     // Check for Biome info
     const biome = this.biomes.find(b => {
       if (!b) return false;
-      const dist = Math.max(Math.abs(r - b.r), Math.abs(c - b.c));
-      return dist <= (b.radius || 0);
+      return this.isWithinBiomeRadius(r, c, b.r, b.c, b.radius || 0);
     });
     if (!clickedEnt && biome) {
       const def = window.Entities.biomeDefs[biome.type];
@@ -1615,6 +1803,7 @@ class Game {
         this.awardExp(unit, 3, null);
       }
     }
+    this.refreshBiomeModifiersForUnit(unit, { grantTurnStart: false, grantImmediateContact: true });
     if (dst) {
       dst.classList.add(opt && opt.dash ? "dash-anim" : "move-anim");
       setTimeout(() => dst.classList.remove("dash-anim", "move-anim"), 520);
@@ -1641,21 +1830,22 @@ class Game {
     const stepR = Math.sign(dr), stepC = Math.sign(dc);
     const path = [];
     let r = sr, c = sc;
+    const canWalkWater = !!(unit && (unit.waterWalker || (window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[unit.type] && window.Entities.unitDefs[unit.type].waterWalker)) && (Config.FEATURES && Config.FEATURES.marksmanWaterWalker));
     for (let s = 1; s <= steps; s++) {
       // Diagonal restriction: check if moving between two blocked tiles
       if (stepR !== 0 && stepC !== 0) {
         const rSide = r, cSide = c; // r,c are current pos before adding step
         const corner1 = this.terrain[rSide + stepR][cSide];
         const corner2 = this.terrain[rSide][cSide + stepC];
-        const isBlocked1 = corner1 === "wall" || corner1 === "water" || corner1 === "fortwall";
-        const isBlocked2 = corner2 === "wall" || corner2 === "water" || corner2 === "fortwall";
+        const isBlocked1 = corner1 === "wall" || corner1 === "fortwall" || (corner1 === "water" && !canWalkWater);
+        const isBlocked2 = corner2 === "wall" || corner2 === "fortwall" || (corner2 === "water" && !canWalkWater);
         if (isBlocked1 && isBlocked2) return null;
       }
 
       r += stepR; c += stepC;
       if (!this.inBounds(r, c)) return null;
       const terr = this.terrain[r][c];
-      if (terr === "wall" || terr === "water" || terr === "fortwall") return null;
+      if (terr === "wall" || terr === "fortwall" || (terr === "water" && !canWalkWater)) return null;
       if (this.occupants[r][c] != null && !(r === tr && c === tc)) return null;
       
       // Sludge entry restriction
@@ -1678,11 +1868,34 @@ class Game {
     }
   }
 
+  applyBiomeToUnits(b) {
+    if (!b) return;
+    const def = window.Entities && window.Entities.biomeDefs && window.Entities.biomeDefs[b.type];
+    if (!def) return;
+    for (const ent of this.entities) {
+      if (!ent || ent.kind !== "unit") continue;
+      if (ent.team !== b.team) continue;
+      if (!this.isWithinBiomeRadius(ent.row, ent.col, b.r, b.c, b.radius || 0)) continue;
+      if (def.effectType === "turn_start_heal") {
+        ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
+      } else if (def.effectType === "turn_start_support_buff") {
+        if (this.getUnitClass(ent.type) === "Support") {
+          ent.apMaxBonus = Math.max(ent.apMaxBonus || 0, def.amount || 1);
+          ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
+          ent.ap = Math.min(this.getEffectiveApMax(ent), ent.ap + (def.amount || 1));
+        }
+      } else if (def.effectType === "turn_start_guard") {
+        ent.guardTurns = Math.max(ent.guardTurns || 0, def.amount || 1);
+        ent.guardValue = Math.max(ent.guardValue || 0, def.guardValue || 1);
+      }
+    }
+    this.renderEntities();
+    this.updateHUD();
+  }
+
   tickTurnEffects() {
     this.tickHazardsForTeam(Config.TEAM.PLAYER);
     this.tickHazardsForTeam(Config.TEAM.AI);
-    this.tickTimedStatusesForTeam(Config.TEAM.PLAYER);
-    this.tickTimedStatusesForTeam(Config.TEAM.AI);
     this.syncSludgeStatuses();
   }
 
@@ -1718,6 +1931,36 @@ class Game {
     }
   }
 
+  refreshBiomeModifiersForUnit(ent, options) {
+    if (!ent || ent.kind !== "unit") return;
+    const grantTurnStart = !!(options && options.grantTurnStart);
+    const grantImmediateContact = !!(options && options.grantImmediateContact);
+    ent.apMaxBonus = 0;
+    const biomeDefs = window.Entities.biomeDefs;
+    for (const b of this.biomes) {
+      if (!b || b.team !== ent.team) continue;
+      if (!this.isWithinBiomeRadius(ent.row, ent.col, b.r, b.c, b.radius || 0)) continue;
+      const def = biomeDefs[b.type];
+      if (!def) continue;
+      if (def.effectType === "turn_start_support_buff" && this.getUnitClass(ent.type) === "Support") {
+        ent.apMaxBonus = Math.max(ent.apMaxBonus || 0, def.amount || 1);
+        if (grantImmediateContact) {
+          ent.ap = Math.min(this.getEffectiveApMax(ent), ent.ap + (def.amount || 1));
+        }
+        if (grantTurnStart) {
+          ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
+          ent.ap = Math.min(this.getEffectiveApMax(ent), ent.ap + (def.amount || 1));
+        }
+      } else if (grantTurnStart && def.effectType === "turn_start_heal") {
+        ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
+      } else if (grantTurnStart && def.effectType === "turn_start_guard") {
+        ent.guardTurns = Math.max(ent.guardTurns || 0, def.amount || 1);
+        ent.guardValue = Math.max(ent.guardValue || 0, def.guardValue || 1);
+      }
+    }
+    ent.ap = Math.min(ent.ap || 0, this.getEffectiveApMax(ent));
+  }
+
   tickHazardsForTeam(team) {
     for (let r = 0; r < Config.ROWS; r++) {
       for (let c = 0; c < Config.COLS; c++) {
@@ -1750,6 +1993,36 @@ class Game {
       if (ent.guardTurns && ent.guardTurns > 0) {
         ent.guardTurns = Math.max(0, ent.guardTurns - 1);
       }
+      if (ent.shadowTurns && ent.shadowTurns > 0) {
+        ent.shadowTurns = Math.max(0, ent.shadowTurns - 1);
+        if (ent.shadowTurns <= 0) ent.inShadowRealm = false;
+      }
+    }
+  }
+
+  tickTimedStatusesGlobal() {
+    // Called once per full round to decrement all timed statuses across teams
+    for (const ent of this.entities) {
+      if (!ent || ent.kind !== "unit") continue;
+      if ((ent.hexTurns || 0) > 0) {
+        ent.hexTurns = Math.max(0, (ent.hexTurns || 0) - 1);
+        if (ent.hexTurns <= 0) ent.hexMarked = false;
+      }
+      if (ent.isBeast) {
+        ent.beastTurns = Math.max(0, (ent.beastTurns || 0) - 1);
+        if (ent.beastTurns <= 0) this.revertBeastForm(ent);
+      }
+      if (ent.siegeTurns && ent.siegeTurns > 0) {
+        ent.siegeTurns = Math.max(0, ent.siegeTurns - 1);
+        if (ent.siegeTurns <= 0) this.revertSiegeMode(ent);
+      }
+      if (ent.guardTurns && ent.guardTurns > 0) {
+        ent.guardTurns = Math.max(0, ent.guardTurns - 1);
+      }
+      if (ent.shadowTurns && ent.shadowTurns > 0) {
+        ent.shadowTurns = Math.max(0, ent.shadowTurns - 1);
+        if (ent.shadowTurns <= 0) ent.inShadowRealm = false;
+      }
     }
   }
 
@@ -1757,7 +2030,6 @@ class Game {
     this.generateEnergy(team);
     this.resetAPForTeam(team);
     this.tickHazardsForTeam(team);
-    this.tickTimedStatusesForTeam(team);
     this.tickBiomes(team);
     this.applyHazardsForTeam(team);
     this.tickCooldowns(team);
@@ -1779,38 +2051,17 @@ class Game {
 
     // 2. Apply biome effects to units in range
     // Biomes apply effects at the start of the turn for units of the same team
-    const biomeDefs = window.Entities.biomeDefs;
     for (const ent of this.entities) {
       if (!ent || ent.kind !== "unit" || ent.team !== team) continue;
-      
-      // Reset temporary buffs from biomes (if we had any, but we'll apply them each turn)
-      // For stat buffs like dmg/range, we might need a more robust way to handle them.
-      // But for heal/guard, we can just apply them.
-      
-      for (const b of this.biomes) {
-        if (!b || b.team !== team) continue;
-        const dist = Math.max(Math.abs(ent.row - b.r), Math.abs(ent.col - b.c));
-        if (dist <= (b.radius || 0)) {
-          const def = biomeDefs[b.type];
-          if (!def) continue;
-
-          if (def.effectType === "turn_start_heal") {
-            ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
-          } else if (def.effectType === "turn_start_support_buff") {
-            if (this.getUnitClass(ent.type) === "Support") {
-              ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
-              ent.ap = Math.min(ent.apMax, ent.ap + (def.amount || 1));
-            }
-          } else if (def.effectType === "turn_start_guard") {
-            ent.guardTurns = Math.max(ent.guardTurns || 0, def.amount || 1);
-          }
-          // Note: Stat buffs like Boxing Arena (+1 DMG) are handled in damage calculation
-        }
-      }
+      this.refreshBiomeModifiersForUnit(ent, { grantTurnStart: true });
     }
   }
 
   applyDamage(target, dmg, source) {
+    // Block cross-realm damage when there is a source unit (global/terrain effects use source=null)
+    if (source && source.kind === "unit" && target && ((!!source.inShadowRealm) !== (!!target.inShadowRealm))) {
+      return;
+    }
     const before = target.hp;
     const bonus = (target.hexMarked ? 1 : 0);
     const abilityBonus = (source && source.kind === "unit" && this.abilityMode && this.abilityMode.unit === source) ? ((source.level || 1) - 1) : 0;
@@ -1821,8 +2072,7 @@ class Game {
       const biomeDefs = window.Entities.biomeDefs;
       for (const b of this.biomes) {
         if (b && b.team === source.team) {
-          const dist = Math.max(Math.abs(source.row - b.r), Math.abs(source.col - b.c));
-          if (dist <= (b.radius || 0)) {
+          if (this.isWithinBiomeRadius(source.row, source.col, b.r, b.c, b.radius || 0)) {
             const def = biomeDefs[b.type];
             if (def && def.effectType === "stat_buff" && def.stat === "dmg") {
               if (!def.filter || this.getUnitClass(source.type) === def.filter) {
@@ -1836,7 +2086,12 @@ class Game {
 
     let effectiveDmg = dmg + bonus + abilityBonus + biomeDmgBonus;
     if (target.kind === "unit" && (target.guardTurns || 0) > 0) {
-      effectiveDmg = Math.max(1, effectiveDmg - 1);
+      const gv = (target.guardValue != null && target.guardValue !== 0) ? target.guardValue : 1;
+      if (gv > 0 && gv < 1) {
+        effectiveDmg = Math.max(1, Math.ceil(effectiveDmg * (1 - gv)));
+      } else {
+        effectiveDmg = Math.max(1, effectiveDmg - gv);
+      }
     }
     if (target.kind === "unit" && target.isBeast) {
         effectiveDmg = Math.max(1, Math.floor(effectiveDmg * 0.8));
@@ -1878,12 +2133,17 @@ class Game {
   }
 
   attack(attacker, target) {
+    if (!attacker || !target) return;
+    // Prevent cross-realm attacks
+    if (attacker.kind === "unit" && target && ((!!attacker.inShadowRealm) !== (!!target.inShadowRealm))) return;
     this.animateAttack(attacker, target);
     this.applyDamage(target, attacker.dmg, attacker);
   }
 
   heal(mage, ally) {
     if (mage.type !== "Mage") return;
+    // Healing is realm-locked
+    if ((!!mage.inShadowRealm) !== (!!ally.inShadowRealm)) return;
     ally.hp = Math.min(ally.maxHp, ally.hp + 2);
     const cell = this.board.getCell(ally.row, ally.col);
     if (cell) {
@@ -1919,6 +2179,9 @@ class Game {
       this.applyNexusEffects(Config.TEAM.PLAYER);
       this.applyNexusEffects(Config.TEAM.AI);
 
+      // Global status durations tick once per full round (after AI finishes)
+      this.tickTimedStatusesGlobal();
+
       this.checkWin();
       this.turn = Config.TEAM.PLAYER;
       this.startTurnForTeam(Config.TEAM.PLAYER);
@@ -1937,7 +2200,12 @@ class Game {
     this.applyNexusEffects(Config.TEAM.AI);
 
     this.turn = nextTurn;
-    
+    // If we've just completed the opponent's turn and are returning to Player,
+    // that's the end of a full round — tick global status durations once.
+    if (nextTurn === Config.TEAM.PLAYER && prevTurn !== Config.TEAM.PLAYER) {
+      this.tickTimedStatusesGlobal();
+    }
+
     this.startTurnForTeam(nextTurn);
     
     this.abilityMode = null;
@@ -1971,13 +2239,15 @@ class Game {
     const playerBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.PLAYER);
     const aiUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.AI);
     const playerUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER);
-    const focus = playerUnits.length ? playerUnits.slice().sort((a, b) => a.hp - b.hp)[0] : playerBase;
     for (const u of aiUnits) {
+      // Per-unit realm-aware enemy list and focus
+      const foes = playerUnits.filter(p => ((!!p.inShadowRealm) === (!!u.inShadowRealm)));
+      const focus = foes.length ? foes.slice().sort((a, b) => a.hp - b.hp)[0] : playerBase;
       while (u.ap > 0) {
         const healTargets = this.getHealTargets(u);
         if (u.type === "Druid" && ((u.abilityCooldowns["Shapeshift"] || 0) === 0) && !u.isBeast) {
           const def = this.getAbilityDefForUnit(u);
-          const enemiesNearby = playerUnits.some(p => Math.max(Math.abs(p.row - u.row), Math.abs(p.col - u.col)) <= 2);
+          const enemiesNearby = foes.some(p => Math.max(Math.abs(p.row - u.row), Math.abs(p.col - u.col)) <= 2);
           if (def && (u.hp <= Math.ceil(u.maxHp * 0.65) || enemiesNearby)) {
             def.perform(this, u, u.row, u.col);
             this.animateAbilityCast(u, def, u.row, u.col);
@@ -1987,7 +2257,7 @@ class Game {
         }
         if (u.type === "Sentinel" && ((u.abilityCooldowns["Fortify"] || 0) === 0)) {
           const def = this.getAbilityDefForUnit(u);
-          const enemiesNearby = playerUnits.some(p => Math.max(Math.abs(p.row - u.row), Math.abs(p.col - u.col)) <= 2);
+          const enemiesNearby = foes.some(p => Math.max(Math.abs(p.row - u.row), Math.abs(p.col - u.col)) <= 2);
           if (def && (u.hp <= Math.ceil(u.maxHp * 0.75) || enemiesNearby)) {
             def.perform(this, u);
             this.animateAbilityCast(u, def, u.row, u.col);
@@ -1999,7 +2269,7 @@ class Game {
           const def = this.getAbilityDefForUnit(u);
           if (def) {
             const distToFocus = focus ? Math.abs(focus.row - u.row) + Math.abs(focus.col - u.col) : 0;
-            if (distToFocus > u.range || playerUnits.some(p => Math.abs(p.row - u.row) + Math.abs(p.col - u.col) > u.range)) {
+            if (distToFocus > u.range || foes.some(p => Math.abs(p.row - u.row) + Math.abs(p.col - u.col) > u.range)) {
               def.perform(this, u);
               this.animateAbilityCast(u, def, u.row, u.col);
               await this.delay(300);
@@ -2419,7 +2689,7 @@ class Game {
           await this.delay(280);
           continue;
         }
-        const nearestPlayer = playerUnits.slice().sort((a, b) => (Math.abs(a.row - u.row) + Math.abs(a.col - u.col)) - (Math.abs(b.row - u.row) + Math.abs(b.col - u.col)))[0];
+        const nearestPlayer = playerUnits.filter(p => ((!!p.inShadowRealm) === (!!u.inShadowRealm))).slice().sort((a, b) => (Math.abs(a.row - u.row) + Math.abs(a.col - u.col)) - (Math.abs(b.row - u.row) + Math.abs(b.col - u.col)))[0];
         if (u.hp <= 1 && nearestPlayer) {
           const step = this.stepAway(u.row, u.col, nearestPlayer.row, nearestPlayer.col, u);
           if (step) {
@@ -2609,7 +2879,10 @@ Game.prototype.resetAPForTeam = function(team) {
         e.ap = 0;
         e.stunnedTurns = st - 1;
       } else {
-        e.ap = e.apMax;
+        if (typeof this.refreshBiomeModifiersForUnit === "function") {
+          this.refreshBiomeModifiersForUnit(e, { grantTurnStart: false });
+        }
+        e.ap = this.getEffectiveApMax(e);
       }
     }
   }
@@ -3321,7 +3594,8 @@ Game.prototype.renderBuyControls = function() {
       const canAfford = energy >= (def.cost || 0);
       if (!canAfford) btn.classList.add("low-energy");
 
-      btn.innerHTML = `<div class="unit-title">${def.symbol} ${type}</div><div class="unit-desc-small">${isBiome ? def.desc : this.getShopRoleSummary(type)}</div>`;
+      const shopDesc = isBiome ? (def.shopLabel || def.shortDesc || type) : this.getShopRoleSummary(type);
+      btn.innerHTML = `<div class="unit-title">${def.symbol} ${type}</div><div class="unit-desc-small">${shopDesc}</div>`;
       
       btn.addEventListener("click", () => {
         if (isBiome) {
@@ -3358,10 +3632,9 @@ Game.prototype.renderBuyControls = function() {
           this.buySelection = { type: type, cost: def.cost };
           
           this.board.clearMarks();
-          if (canAfford) {
-            const pos = this.getBuyPositions(myTeam, type);
-            this.board.markPositions(pos, "buy-hl");
-          }
+          // Always show valid placement positions for preview (even if low on energy)
+          const pos = this.getBuyPositions(myTeam, type);
+          this.board.markPositions(pos, "buy-hl");
           
           // Update unit panel for Unit preview
           const preview = {

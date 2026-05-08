@@ -1,36 +1,39 @@
 const unitDefs = {};
 const biomeDefs = {
   "Boxing Arena": {
-    radius: 1,
+    radius: 2,
     duration: 4,
     cost: 4,
     symbol: "🥊",
     color: "#f87171", // Reddish
     desc: "A gritty combat zone where fighters excel. Increases damage by 1 for all Fighter units within the area.",
+    shopLabel: "Fighter DMG",
     effectType: "stat_buff",
     stat: "dmg",
     amount: 1,
     filter: "Fighter"
   },
   "Watchtower": {
-    radius: 1,
+    radius: 2,
     duration: 5,
     cost: 6,
     symbol: "🗼",
     color: "#60a5fa", // Blueish
     desc: "A high vantage point for sharpshooters. Increases attack range by 1 for all Marksman units within the area.",
+    shopLabel: "Range Boost",
     effectType: "stat_buff",
     stat: "range",
     amount: 1,
     filter: "Marksman"
   },
   "Sanctum": {
-    radius: 1,
+    radius: 2,
     duration: 5,
     cost: 6,
     symbol: "⛪",
     color: "#fbbf24", // Golden
-    desc: "A holy sanctuary for healers. Heals 1 HP and grants 1 AP to all Support units within the area at the start of every turn.",
+    desc: "A holy sanctuary for healers. Support units in range gain +1 Max AP and get immediate +1 AP contact plus turn-start heal/AP.",
+    shopLabel: "Support AP",
     effectType: "turn_start_support_buff",
     amount: 1
   },
@@ -41,8 +44,10 @@ const biomeDefs = {
     symbol: "⚒️",
     color: "#94a3b8", // Metallic Gray
     desc: "A heavy industrial zone that reinforces armor. Grants 1 turn of Guard (damage reduction) to all allied units within the area at the start of every turn.",
+    shopLabel: "Team Guard",
     effectType: "turn_start_guard",
     amount: 1
+    ,guardValue: 1
   }
 };
 
@@ -84,8 +89,12 @@ const makeUnit = (team, type, row, col) => ({
   burnTurns: 0,
   beastTurns: 0,
   guardTurns: 0,
+  guardValue: unitDefs[type] && unitDefs[type].guardValue != null ? unitDefs[type].guardValue : 0,
   siegeTurns: 0,
   stuck: false,
+  waterWalker: unitDefs[type] && !!unitDefs[type].waterWalker,
+  inShadowRealm: false,
+  shadowTurns: 0,
   isBeast: false,
   leveling: unitDefs[type].leveling || null,
 });

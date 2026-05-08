@@ -11,4 +11,10 @@ window.Config = {
   ENERGY_GAIN_CAP: 6,
   ENERGY_START_PLAYER: 2,
   ENERGY_START_AI: 2,
+  FEATURES: {
+    biomeImmediate: true,
+    marksmanWaterWalker: true,
+    shadowRealm: true,
+    enhancedStatusUI: true
+  },
 };

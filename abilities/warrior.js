@@ -4,6 +4,8 @@
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Warrior = {
     hp: 8, range: 1, dmg: 2, move: 2, cost: 3,
+    class: "Fighter",
+    role: "Frontline Bruiser",
     symbol: "⚔️", ability: "Piercing frontline strike",
     rangePattern: "orthogonal", movePattern: "orthogonal",
     cooldowns: { "Charge": 3 },
