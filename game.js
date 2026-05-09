@@ -35,7 +35,7 @@ class Game {
       active: false,
       completed: false,
       mode: "menu",
-      pickCount: 10,
+      pickCount: 8,
       sequence: [],
       currentIndex: 0,
       firstTeam: Config.TEAM.PLAYER,
@@ -161,6 +161,27 @@ class Game {
     return Math.hypot(dr, dc);
   }
 
+  getUnitClassFor(unit) {
+    return unit && unit.kind === "unit" ? this.getUnitClass(unit.type) : "Other";
+  }
+
+  canUnitWalkWater(unit) {
+    const def = unit && window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[unit.type];
+    return !!(unit && (unit.waterWalker || (def && def.waterWalker)) && (Config.FEATURES && Config.FEATURES.marksmanWaterWalker));
+  }
+
+  isTerrainBlockingForUnit(terrain, unit) {
+    return terrain === "wall" || terrain === "fortwall" || (terrain === "water" && !this.canUnitWalkWater(unit));
+  }
+
+  isTerrainPassableForUnit(terrain, unit) {
+    return !this.isTerrainBlockingForUnit(terrain, unit);
+  }
+
+  doesTerrainBlockLine(terrain) {
+    return terrain === "wall" || terrain === "fortwall";
+  }
+
   isWithinBiomeRadius(rowA, colA, rowB, colB, radius) {
     return this.getBiomeDistance(rowA, colA, rowB, colB) <= (radius + 0.35);
   }
@@ -227,6 +248,8 @@ class Game {
       Forge: "Aegis Support",
       Tidewalker: "Water Skirmisher",
       Shade: "Shadow Assassin",
+      Bulwark: "Ally Protector",
+      Stalker: "Forest Ambusher",
     };
     return roles[type] || "Battle Unit";
   }
@@ -241,11 +264,13 @@ class Game {
       Druid: "Fighter",
       Paladin: "Tank",
       Sentinel: "Tank",
+      Bulwark: "Tank",
       Archer: "Marksman",
       Tidewalker: "Marksman",
       Ballista: "Marksman",
       Shade: "Assassin",
       Rogue: "Assassin",
+      Stalker: "Assassin",
       Magnet: "Control",
       Hex: "Control",
       Mage: "Control",
@@ -299,7 +324,7 @@ class Game {
       cell.innerHTML = "";
       cell.style.borderColor = "";
       cell.classList.remove(
-        "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","terrain-nexus-player","terrain-nexus-ai",
+        "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-forest","terrain-ruins","terrain-nexus","terrain-nexus-player","terrain-nexus-ai",
           "hazard-fire","hazard-sludge","construction-site","biome-player","biome-ai",
           "unit-player","unit-ai","status-hex","status-stuck","token-player","token-ai","in-shadow",
         "move-hl","attack-hl","heal-hl","ability-hl","attack-range-hl","ability-range-max","selected-empty","selected-target-hl","buy-hl"
@@ -322,6 +347,8 @@ class Game {
         else if (t === "wall") cell.classList.add("terrain-wall");
         else if (t === "fortwall") cell.classList.add("terrain-fortwall");
         else if (t === "bridge") cell.classList.add("terrain-bridge");
+        else if (t === "forest") cell.classList.add("terrain-forest");
+        else if (t === "ruins") cell.classList.add("terrain-ruins");
         else if (t === "nexus") {
           cell.classList.add("terrain-nexus");
           const owner = this.nexusOwners[r][c];
@@ -331,10 +358,10 @@ class Game {
           icon.textContent = "🔷"; // Larger blue diamond shape
           cell.appendChild(icon);
         }
-        if (t === "wall" || t === "bridge" || t === "fortwall") {
+        if (t === "wall" || t === "bridge" || t === "fortwall" || t === "forest" || t === "ruins") {
           const terrainIcon = document.createElement("span");
           terrainIcon.className = "terrain-icon";
-          terrainIcon.textContent = t === "wall" ? "🧱" : (t === "bridge" ? "🌉" : "⬜");
+          terrainIcon.textContent = t === "wall" ? "🧱" : (t === "bridge" ? "🌉" : (t === "forest" ? "🌲" : (t === "ruins" ? "▥" : "⬜")));
           cell.appendChild(terrainIcon);
         }
       }
@@ -658,6 +685,8 @@ class Game {
       wall: { icon: "🧱", name: "Wall", desc: "A basic wall tile that blocks movement and line paths.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "wall" },
       fortwall: { icon: "⬜", name: "Fortwall", desc: "A reinforced wall built by the Builder. It blocks movement.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "fortwall" },
       bridge: { icon: "🌉", name: "Bridge", desc: "A passable bridge over water created by construction.", notes: [["Movement", "Passable"], ["Builder", "Can revert"]], subtype: "bridge" },
+      forest: { icon: "🌲", name: "Forest", desc: "Dense cover that reduces incoming ranged damage. Assassins hit harder from it.", notes: [["Movement", "Passable"], ["Cover", "-1 ranged damage"], ["Assassin", "+1 damage from forest"]], subtype: "forest" },
+      ruins: { icon: "▥", name: "Ruins", desc: "Broken high ground. Marksmen attack harder from ruins and tanks take less damage on them.", notes: [["Movement", "Passable"], ["Marksman", "+1 damage from ruins"], ["Tank", "-1 damage while standing here"]], subtype: "ruins" },
       nexus: { icon: "💠", name: "Nexus", desc: "Standing here captures the nexus for your team and helps units level up.", notes: [["Effect", "Capture point"], ["Bonus", "Grants XP"]], subtype: "nexus" },
       grass: { icon: "🟩", name: "Open Ground", desc: "Open ground with no special effect.", notes: [["Movement", "Passable"], ["Effect", "None"]], subtype: "grass" }
     };
@@ -1345,8 +1374,6 @@ class Game {
     if (hSrc && hSrc.kind === "sludge") return [];
     const res = [];
     const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
-    // allow certain units to traverse water
-    const canWalkWater = !!(unit && (unit.waterWalker || (window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[unit.type] && window.Entities.unitDefs[unit.type].waterWalker)) && (Config.FEATURES && Config.FEATURES.marksmanWaterWalker));
     for (const [dr, dc] of dirs) {
       for (let s = 1; s <= maxSteps; s++) {
         const r = unit.row + dr * s;
@@ -1360,13 +1387,13 @@ class Game {
           // Check the two tiles that form the "gap" for this diagonal step
           const corner1 = this.terrain[rSide + dr][cSide];
           const corner2 = this.terrain[rSide][cSide + dc];
-          const isBlocked1 = corner1 === "wall" || corner1 === "fortwall" || (corner1 === "water" && !canWalkWater);
-          const isBlocked2 = corner2 === "wall" || corner2 === "fortwall" || (corner2 === "water" && !canWalkWater);
+          const isBlocked1 = this.isTerrainBlockingForUnit(corner1, unit);
+          const isBlocked2 = this.isTerrainBlockingForUnit(corner2, unit);
           if (isBlocked1 && isBlocked2) break;
         }
 
         const terr = this.terrain[r][c];
-        if (terr === "wall" || terr === "fortwall" || (terr === "water" && !canWalkWater)) break;
+        if (this.isTerrainBlockingForUnit(terr, unit)) break;
         if (this.occupants[r][c] != null) break;
         
         // Sludge entry restriction
@@ -1400,7 +1427,7 @@ class Game {
   hasLineOfSight(sr, sc, tr, tc) {
     const cells = this.traceLineSupercover(sr, sc, tr, tc);
     for (const [r, c] of cells) {
-      if (this.terrain[r][c] === "wall" || this.terrain[r][c] === "fortwall") return false;
+      if (this.doesTerrainBlockLine(this.terrain[r][c])) return false;
     }
     return true;
   }
@@ -1484,7 +1511,7 @@ class Game {
         const r = unit.row + dr * step, c = unit.col + dc * step;
         if (!this.inBounds(r, c)) break;
         const terr = this.terrain[r][c];
-        if (terr === "wall" || terr === "water" || terr === "fortwall") break;
+        if (this.isTerrainBlockingForUnit(terr, unit)) break;
         res.push([r, c]);
       }
     }
@@ -1887,22 +1914,21 @@ class Game {
     const stepR = Math.sign(dr), stepC = Math.sign(dc);
     const path = [];
     let r = sr, c = sc;
-    const canWalkWater = !!(unit && (unit.waterWalker || (window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[unit.type] && window.Entities.unitDefs[unit.type].waterWalker)) && (Config.FEATURES && Config.FEATURES.marksmanWaterWalker));
     for (let s = 1; s <= steps; s++) {
       // Diagonal restriction: check if moving between two blocked tiles
       if (stepR !== 0 && stepC !== 0) {
         const rSide = r, cSide = c; // r,c are current pos before adding step
         const corner1 = this.terrain[rSide + stepR][cSide];
         const corner2 = this.terrain[rSide][cSide + stepC];
-        const isBlocked1 = corner1 === "wall" || corner1 === "fortwall" || (corner1 === "water" && !canWalkWater);
-        const isBlocked2 = corner2 === "wall" || corner2 === "fortwall" || (corner2 === "water" && !canWalkWater);
+        const isBlocked1 = this.isTerrainBlockingForUnit(corner1, unit);
+        const isBlocked2 = this.isTerrainBlockingForUnit(corner2, unit);
         if (isBlocked1 && isBlocked2) return null;
       }
 
       r += stepR; c += stepC;
       if (!this.inBounds(r, c)) return null;
       const terr = this.terrain[r][c];
-      if (terr === "wall" || terr === "fortwall" || (terr === "water" && !canWalkWater)) return null;
+      if (this.isTerrainBlockingForUnit(terr, unit)) return null;
       if (this.occupants[r][c] != null && !(r === tr && c === tc)) return null;
       
       // Sludge entry restriction
@@ -2142,6 +2168,17 @@ class Game {
     }
 
     let effectiveDmg = dmg + bonus + abilityBonus + biomeDmgBonus;
+    if (source && source.kind === "unit" && target && target.kind === "unit") {
+      const sourceTerrain = this.terrain[source.row] && this.terrain[source.row][source.col];
+      const targetTerrain = this.terrain[target.row] && this.terrain[target.row][target.col];
+      const sourceClass = this.getUnitClassFor(source);
+      const targetClass = this.getUnitClassFor(target);
+      const dist = Math.max(Math.abs(source.row - target.row), Math.abs(source.col - target.col));
+      if (sourceTerrain === "forest" && sourceClass === "Assassin") effectiveDmg += 1;
+      if (sourceTerrain === "ruins" && sourceClass === "Marksman") effectiveDmg += 1;
+      if (targetTerrain === "forest" && dist > 1 && sourceClass !== "Assassin") effectiveDmg = Math.max(1, effectiveDmg - 1);
+      if (targetTerrain === "ruins" && targetClass === "Tank") effectiveDmg = Math.max(1, effectiveDmg - 1);
+    }
     if (target.kind === "unit" && (target.guardTurns || 0) > 0) {
       const gv = (target.guardValue != null && target.guardValue !== 0) ? target.guardValue : 1;
       if (gv > 0 && gv < 1) {
@@ -2325,6 +2362,38 @@ class Game {
             this.animateAbilityCast(u, def, u.row, u.col);
             await this.delay(300);
             continue;
+          }
+        }
+        if (u.type === "Bulwark" && ((u.abilityCooldowns["Shield Line"] || 0) === 0)) {
+          const def = this.getAbilityDefForUnit(u);
+          const adjacentAllies = this.entities.filter(e => e.kind === "unit" && e.team === u.team && e !== u && Math.max(Math.abs(e.row - u.row), Math.abs(e.col - u.col)) <= 1);
+          const enemiesNearby = foes.some(p => Math.max(Math.abs(p.row - u.row), Math.abs(p.col - u.col)) <= 2);
+          if (def && (adjacentAllies.length || enemiesNearby || u.hp <= Math.ceil(u.maxHp * 0.7))) {
+            def.perform(this, u);
+            this.animateAbilityCast(u, def, u.row, u.col);
+            await this.delay(300);
+            continue;
+          }
+        }
+        if (u.type === "Stalker" && ((u.abilityCooldowns["Ambush"] || 0) === 0)) {
+          const def = this.getAbilityDefForUnit(u);
+          if (def) {
+            const forestBonus = this.terrain[u.row] && this.terrain[u.row][u.col] === "forest";
+            const scored = def.computeTargets(this, u).map(([r, c]) => {
+              const target = this.occupants[r][c];
+              if (!target || target.team === u.team) return { r, c, score: 0, target: null };
+              let score = (target.kind === "base" ? 8 : 3 + (target.maxHp - target.hp));
+              if (forestBonus) score += 4;
+              if (target.hp <= (forestBonus ? 5 : 3)) score += 5;
+              return { r, c, score, target };
+            }).sort((a, b) => b.score - a.score);
+            if (scored.length && scored[0].score > 0) {
+              def.perform(this, u, scored[0].r, scored[0].c);
+              this.animateAbilityCast(u, def, scored[0].r, scored[0].c);
+              this.logEvent({ type: "ability", caster: `AI Stalker`, ability: "Ambush", target: scored[0].target ? `${scored[0].target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${scored[0].target.kind === "unit" ? scored[0].target.type : "Base"}` : "Unknown" });
+              await this.delay(320);
+              continue;
+            }
           }
         }
         if (u.type === "Ballista" && ((u.abilityCooldowns["Set Up"] || 0) === 0) && (u.siegeTurns || 0) === 0) {
@@ -2528,7 +2597,7 @@ class Game {
                 if (!this.inBounds(stepR, stepC)) continue;
                 if (this.occupants[stepR][stepC] != null) continue;
                 const terr = this.terrain[stepR][stepC];
-                if (terr === "wall" || terr === "water" || terr === "fortwall") continue;
+                if (this.isTerrainBlockingForUnit(terr, occ)) continue;
                 const before = Math.max(Math.abs(r - u.row), Math.abs(c - u.col));
                 const after  = Math.max(Math.abs(stepR - u.row), Math.abs(stepC - u.col));
                 const gain = before - after;
@@ -2586,7 +2655,7 @@ class Game {
                 let cc = u.col + dc;
                 while (this.inBounds(rr, cc)) {
                   const terr = this.terrain[rr][cc];
-                  if (terr === "wall" || terr === "water" || terr === "fortwall") break;
+                  if (this.isTerrainBlockingForUnit(terr, u)) break;
                   const occ = this.occupants[rr][cc];
                   if (occ && occ.team !== u.team) {
                     score += occ.kind === "base" ? 20 : 3 + (occ.maxHp - occ.hp);
@@ -2621,7 +2690,7 @@ class Game {
                 let cc = u.col + dc;
                 while (this.inBounds(rr, cc)) {
                   const terr = this.terrain[rr][cc];
-                  if (terr === "wall" || terr === "water" || terr === "fortwall") break;
+                  if (this.isTerrainBlockingForUnit(terr, u)) break;
                   const occ = this.occupants[rr][cc];
                   if (occ && occ.kind === "unit") {
                     if (occ.team !== u.team) score += 3 + (occ.maxHp - occ.hp);
@@ -2795,7 +2864,7 @@ class Game {
   }
 
   stepToward(sr, sc, tr, tc, unit) {
-    const dummy = { row: sr, col: sc };
+    const dummy = { ...unit, row: sr, col: sc };
     const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
     dummy.movePattern = unit.movePattern || "orthogonal";
     const candidates = this.getReachableTiles(dummy, maxSteps);
@@ -2805,7 +2874,7 @@ class Game {
   }
 
   stepTowardSmart(sr, sc, tr, tc, unit) {
-    const dummy = { row: sr, col: sc };
+    const dummy = { ...unit, row: sr, col: sc };
     const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
     dummy.movePattern = unit.movePattern || "orthogonal";
     const candidates = this.getReachableTiles(dummy, maxSteps);
@@ -2833,7 +2902,7 @@ class Game {
   }
 
   stepAway(sr, sc, er, ec, unit) {
-    const dummy = { row: sr, col: sc };
+    const dummy = { ...unit, row: sr, col: sc };
     const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
     dummy.movePattern = unit.movePattern || "orthogonal";
     const candidates = this.getReachableTiles(dummy, maxSteps);
@@ -2973,53 +3042,92 @@ window.addEventListener("DOMContentLoaded", () => {
   window.game = game;
 });
  
-// Terrain generation tuned for organic symmetric placement with density
+// Terrain generation tuned for mirrored, clustered battlefields.
 Game.prototype.generateTerrain = function() {
   const totalTiles = Config.ROWS * Config.COLS;
-  let target = Math.floor(totalTiles * (Config.TERRAIN_DENSITY || 0.12));
-  if (target % 2 !== 0) target -= 1;
-  const pairsTarget = Math.max(0, Math.floor(target / 2));
-  let pairsPlaced = 0;
-  let safety = 0;
-  const centerBias = () => {
-    let sum = 0;
-    for (let i = 0; i < 6; i++) sum += Math.random();
-    return (sum / 6);
-  };
-  const edgeBiasIndex = (size) => {
-    const edgeSide = Math.random() < 0.5 ? 0 : size - 1;
-    const jitter = Math.round((Math.random() - 0.5) * size * 0.3);
-    return Math.min(size - 1, Math.max(0, edgeSide + jitter));
-  };
+  const targetTiles = Math.max(24, Math.floor(totalTiles * (Config.TERRAIN_DENSITY || 0.2)));
+  let placedTiles = 0;
   const blocked = new Set();
   const pAdj = this.getBuyPositions(Config.TEAM.PLAYER);
   const aAdj = this.getBuyPositions(Config.TEAM.AI);
   for (const [r, c] of pAdj) blocked.add(`${r},${c}`);
   for (const [r, c] of aAdj) blocked.add(`${r},${c}`);
-  while (pairsPlaced < pairsTarget && safety < 5000) {
-    safety++;
-    const useEdge = Math.random() < 0.65;
-    const r = useEdge ? edgeBiasIndex(Config.ROWS) : Math.min(Config.ROWS - 1, Math.max(0, Math.floor(centerBias() * Config.ROWS)));
-    const c = useEdge ? edgeBiasIndex(Config.COLS) : Math.min(Config.COLS - 1, Math.max(0, Math.floor(centerBias() * Config.COLS)));
+  for (const e of this.entities) {
+    if (e && e.row != null && e.col != null) blocked.add(`${e.row},${e.col}`);
+  }
+
+  const canPlace = (r, c) => {
+    if (!this.inBounds(r, c)) return false;
+    if (blocked.has(`${r},${c}`)) return false;
+    if (this.occupants[r][c] != null) return false;
+    return this.terrain[r][c] == null;
+  };
+
+  const placeMirrorPair = (r, c, terrain) => {
     const mr = Config.ROWS - 1 - r;
     const mc = Config.COLS - 1 - c;
-    if (r === mr && c === mc) continue;
-    if (this.occupants[r][c] != null) continue;
-    if (this.occupants[mr][mc] != null) continue;
-    if (this.terrain[r][c] != null) continue;
-    if (this.terrain[mr][mc] != null) continue;
-    if (blocked.has(`${r},${c}`)) continue;
-    if (blocked.has(`${mr},${mc}`)) continue;
-    let neighborCount = 0;
-    for (const [dr, dc] of [[1,0],[-1,0],[0,1],[0,-1]]) {
-      const nr = r + dr, nc = c + dc;
-      if (this.inBounds(nr, nc) && this.terrain[nr][nc]) neighborCount++;
+    if (!canPlace(r, c) || !canPlace(mr, mc)) return false;
+    this.terrain[r][c] = terrain;
+    this.terrain[mr][mc] = terrain;
+    placedTiles += (r === mr && c === mc) ? 1 : 2;
+    return true;
+  };
+
+  const weightedTerrain = () => {
+    const roll = Math.random();
+    if (roll < 0.34) return "forest";
+    if (roll < 0.58) return "water";
+    if (roll < 0.78) return "wall";
+    return "ruins";
+  };
+
+  const growCluster = (terrain, startR, startC, size, bias) => {
+    const frontier = [[startR, startC]];
+    const dirs = bias || [[1,0],[-1,0],[0,1],[0,-1]];
+    let attempts = 0;
+    while (frontier.length && placedTiles < targetTiles && attempts++ < size * 18) {
+      const [r, c] = frontier[Math.floor(Math.random() * frontier.length)];
+      if (placeMirrorPair(r, c, terrain)) {
+        if (--size <= 0) break;
+      }
+      const [dr, dc] = dirs[Math.floor(Math.random() * dirs.length)];
+      const nr = r + dr + (Math.random() < 0.2 ? Math.sign(Math.random() - 0.5) : 0);
+      const nc = c + dc + (Math.random() < 0.2 ? Math.sign(Math.random() - 0.5) : 0);
+      if (this.inBounds(nr, nc)) frontier.push([nr, nc]);
+      if (frontier.length > 14) frontier.shift();
     }
-    if (neighborCount > 2 && Math.random() < 0.6) continue;
-    const terr = Math.random() < 0.5 ? "wall" : "water";
-    this.terrain[r][c] = terr;
-    this.terrain[mr][mc] = terr;
-    pairsPlaced++;
+  };
+
+  const randomNearCenter = (spread) => {
+    const r = Math.floor(Config.ROWS / 2 + (Math.random() - 0.5) * spread);
+    const c = Math.floor(Config.COLS / 2 + (Math.random() - 0.5) * spread);
+    return [
+      Math.max(1, Math.min(Config.ROWS - 2, r)),
+      Math.max(1, Math.min(Config.COLS - 2, c)),
+    ];
+  };
+
+  for (let i = 0; i < 1; i++) {
+    const [r, c] = randomNearCenter(Config.ROWS);
+    growCluster("water", r, c, 3 + Math.floor(Math.random() * 2), Math.random() < 0.5 ? [[1,0],[-1,0],[1,1],[-1,-1]] : [[0,1],[0,-1],[1,1],[-1,-1]]);
+  }
+  for (let i = 0; i < 1; i++) {
+    const [r, c] = randomNearCenter(Config.ROWS - 2);
+    growCluster("wall", r, c, 2 + Math.floor(Math.random() * 2), Math.random() < 0.5 ? [[1,0],[-1,0]] : [[0,1],[0,-1]]);
+  }
+  for (let i = 0; i < 2; i++) {
+    const [r, c] = randomNearCenter(Config.ROWS + 2);
+    growCluster("forest", r, c, 2 + Math.floor(Math.random() * 2));
+  }
+  for (let i = 0; i < 2; i++) {
+    const [r, c] = randomNearCenter(6);
+    growCluster("ruins", r, c, 1 + Math.floor(Math.random() * 2));
+  }
+
+  let safety = 0;
+  while (placedTiles < targetTiles && safety++ < 1000) {
+    const [r, c] = randomNearCenter(Config.ROWS + 4);
+    growCluster(weightedTerrain(), r, c, 1 + Math.floor(Math.random() * 3));
   }
   this.placeNexuses();
 };
@@ -3251,7 +3359,7 @@ Game.prototype.playSfx = function(kind) {
 Game.prototype.placeNexuses = function() {
   let tries = 0;
   const centerRadius = 2;
-  const ok = (r, c) => this.inBounds(r, c) && this.occupants[r][c] == null && this.terrain[r][c] == null;
+  const ok = (r, c) => this.inBounds(r, c) && this.occupants[r][c] == null;
   while (tries++ < 1000) {
     const r = Math.floor(Config.ROWS / 2) + (Math.floor(Math.random() * (centerRadius * 2 + 1)) - centerRadius);
     const c = Math.floor(Config.COLS / 2) + (Math.floor(Math.random() * (centerRadius * 2 + 1)) - centerRadius);
@@ -3488,8 +3596,8 @@ Game.prototype.startDraft = function(mode, options) {
     active: true,
     completed: false,
     mode: mode || "ai",
-    pickCount: opts.pickCount || 10,
-    sequence: this.getDraftSequence(firstTeam, secondTeam, opts.pickCount || 10),
+    pickCount: opts.pickCount || 8,
+    sequence: this.getDraftSequence(firstTeam, secondTeam, opts.pickCount || 8),
     currentIndex: 0,
     firstTeam,
     secondTeam
@@ -3511,6 +3619,13 @@ Game.prototype.getDraftSequence = function(firstTeam, secondTeam, pickCount) {
   while (sequence.filter(t => t === firstTeam).length < pickCount || sequence.filter(t => t === secondTeam).length < pickCount) {
     for (const team of base) {
       if (sequence.filter(t => t === team).length < pickCount) sequence.push(team);
+    }
+  }
+  if (sequence.length >= 2 && sequence[sequence.length - 1] === firstTeam) {
+    const previousIndex = sequence.length - 2;
+    if (sequence[previousIndex] === secondTeam) {
+      sequence[previousIndex] = firstTeam;
+      sequence[sequence.length - 1] = secondTeam;
     }
   }
   return sequence;
@@ -3765,7 +3880,7 @@ Game.prototype.chooseAIDraftPick = function() {
   const ownPicks = Array.from(this.draftedUnits[Config.TEAM.AI]);
   const ownClasses = ownPicks.filter(type => defs[type]).map(type => this.getUnitClass(type));
   const ownBiomeCount = ownPicks.filter(type => biomeDefs[type]).length;
-  const wantedClasses = ["Tank", "Marksman", "Support", "Control", "Fighter"];
+  const wantedClasses = ["Tank", "Assassin", "Marksman", "Support", "Control", "Fighter"];
   const available = this.getDraftableItems().filter(type => !picked.has(type));
   if (!available.length) return null;
   const scored = available.map(type => {
@@ -3774,15 +3889,16 @@ Game.prototype.chooseAIDraftPick = function() {
     const cls = isBiome ? "Biome" : this.getUnitClass(type);
     let score = (def.cost || 0) * 0.35;
     if (isBiome) {
-      score += ownBiomeCount < 3 ? 4 : -3;
+      score += ownBiomeCount < 2 ? 4 : -5;
       if (type === "Forge" && ownClasses.includes("Tank")) score += 3;
       if (type === "Watchtower" && ownClasses.includes("Marksman")) score += 3;
       if (type === "Sanctum" && ownClasses.includes("Support")) score += 3;
       if (type === "Boxing Arena" && ownClasses.includes("Fighter")) score += 3;
     } else {
       if (wantedClasses.includes(cls) && !ownClasses.includes(cls)) score += 5;
-      if (["Sentinel", "Paladin", "Archer", "Ballista", "Cleric", "Firecaller", "Sludge"].includes(type)) score += 2;
+      if (["Sentinel", "Bulwark", "Paladin", "Stalker", "Archer", "Ballista", "Cleric", "Firecaller", "Sludge"].includes(type)) score += 2;
       if (this.draftedUnits[Config.TEAM.PLAYER].has("Warrior") && cls === "Marksman") score += 2;
+      if (this.draftedUnits[Config.TEAM.PLAYER].has("Archer") && cls === "Assassin") score += 2;
     }
     return { type, score };
   }).sort((a, b) => b.score - a.score);
@@ -3923,7 +4039,7 @@ Game.prototype.getBuyPositions = function(team, type) {
       
       const t = this.terrain[r][c];
       // Only block placement on blocking terrain
-      if (t === "water" || t === "wall" || t === "fortwall") continue;
+      if (this.isTerrainBlockingForUnit(t, type ? { type } : null)) continue;
       
       if (this.occupants[r][c] != null) continue;
       res.push([r, c]);
@@ -3942,7 +4058,7 @@ Game.prototype.renderBuyControls = function() {
     wrap.innerHTML = `
       <div class="draft-shop-lock">
         <b>Draft Required</b>
-        <span>Choose 10 total units and biomes before buying from the shop.</span>
+        <span>Choose 8 total units and biomes before buying from the shop.</span>
       </div>
     `;
     return;
@@ -4131,8 +4247,10 @@ Game.prototype.chooseAIPurchaseType = function() {
   const needHealer = aiUnits.some(u => u.hp < u.maxHp);
   if (needHealer && uniqueAffordable.includes("Mage")) return "Mage";
   const preferRanged = playerUnits.length === 0 || playerUnits.some(u => u.type === "Warrior");
-  const weights = { Warrior: 1, Archer: 2, Mage: 1, Paladin: 2, Berserker: 2, Builder: 2, Alchemist: 2, Rogue: 2, Cleric: 1, Firecaller: 2, Magnet: 1, Avenger: 1, Necromancer: 1, Hex: 1, Sludge: 1, Druid: 1, Sentinel: 2, Ballista: 2 };
+  const weights = { Warrior: 1, Archer: 2, Mage: 1, Paladin: 2, Berserker: 2, Builder: 2, Alchemist: 2, Rogue: 2, Cleric: 1, Firecaller: 2, Magnet: 1, Avenger: 1, Necromancer: 1, Hex: 1, Sludge: 1, Druid: 1, Sentinel: 2, Ballista: 2, Bulwark: 2, Stalker: 2 };
   if (preferRanged) { weights.Archer += 1; weights.Paladin += 1; }
-  const list = uniqueAffordable.flatMap(t => Array(weights[t]).fill(t));
+  if (playerUnits.some(u => ["Archer", "Ballista", "Tidewalker"].includes(u.type))) weights.Stalker += 1;
+  if (aiUnits.length < 2 && uniqueAffordable.includes("Bulwark")) weights.Bulwark += 1;
+  const list = uniqueAffordable.flatMap(t => Array(Math.max(1, weights[t] || 1)).fill(t));
   return list[Math.floor(Math.random() * list.length)];
 };

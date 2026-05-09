@@ -48,7 +48,7 @@
       const destC = unit.col + Math.sign(c - unit.col);
       if (game.inBounds(destR, destC)) {
         const terr = game.terrain[destR][destC];
-        if (!(terr === "wall" || terr === "water" || terr === "fortwall") && game.occupants[destR][destC] == null) {
+        if (game.isTerrainPassableForUnit(terr, occ) && game.occupants[destR][destC] == null) {
           const path = game.getMovePath(occ, destR, destC, 99);
           if (path && path.length) {
             game.animateMove(occ, path, { dash: true });

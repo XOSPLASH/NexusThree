@@ -50,7 +50,7 @@
             const nr = enemy.row + dr, nc = enemy.col + dc;
             if (!game.inBounds(nr, nc)) continue;
             // Must be empty
-            if (game.occupants[nr][nc] || game.terrain[nr][nc]) continue;
+            if (game.occupants[nr][nc] || !game.isTerrainPassableForUnit(game.terrain[nr][nc], unit)) continue;
             // Must be within range 4 of unit
             const dist = Math.max(Math.abs(nr - unit.row), Math.abs(nc - unit.col));
             if (dist <= range) {

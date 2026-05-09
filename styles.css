@@ -718,6 +718,8 @@ body {
 .draft-terrain-wall { background: #991b1b; }
 .draft-terrain-fortwall { background: #b91c1c; }
 .draft-terrain-bridge { background: #92400e; }
+.draft-terrain-forest { background: #166534; }
+.draft-terrain-ruins { background: #78716c; }
 .draft-terrain-nexus { background: #6b7280; }
 .draft-base-friendly,
 .draft-base-enemy {
@@ -963,6 +965,8 @@ body {
 .terrain-wall { background-color: #334155 !important; border-color: #475569 !important; }
 .terrain-bridge { background-color: #451a03 !important; border-color: #78350f !important; }
 .terrain-fortwall { background-color: #1e293b !important; border-color: #334155 !important; }
+.terrain-forest { background-color: #14532d !important; border-color: #15803d !important; }
+.terrain-ruins { background-color: #57534e !important; border-color: #a8a29e !important; }
 .terrain-nexus { 
   background: radial-gradient(circle at center, #6b7280 0%, #374151 100%) !important; 
   border-color: #9ca3af !important; 

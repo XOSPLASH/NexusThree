@@ -8,7 +8,7 @@
     dmg: 2,
     move: 3,
     cost: 4,
-    symbol: "🎯",
+    symbol: "🪝",
     ability: "Harpoon Volley: fire a piercing harpoon in a straight line. (Cooldown 3)",
     rangePattern: "straight",
     movePattern: "orthogonal",
