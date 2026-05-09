@@ -27,6 +27,15 @@
     desc: "Transform into a Beast for 2 turns (High HP, Dmg, Speed, Dmg Reduction).",
     range: 0,
     rangePattern: "self",
+    duration: 2,
+    statPreview: [
+      ["Max HP", "9"],
+      ["Heal", "+5 current HP"],
+      ["Damage", "4"],
+      ["Move", "4"],
+      ["Range", "1 melee"],
+      ["Defense", "20% damage reduction"]
+    ],
     requiresTarget: false,
     computeTargets(game, unit) {
       return [[unit.row, unit.col]];

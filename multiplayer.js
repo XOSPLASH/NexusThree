@@ -71,6 +71,7 @@ window.Multiplayer = (function() {
       biomes: game.biomes,
       basePositions: game.entities.filter(e => e.kind === 'base').map(e => ({ team: e.team, r: e.row, c: e.col }))
     });
+          game.startDraft('pvp', { firstTeam: Config.TEAM.PLAYER });
         }, 500);
       });
     });
@@ -151,6 +152,12 @@ window.Multiplayer = (function() {
         break;
       case 'BUY_RUNE':
         executeBuyRune(payload);
+        break;
+      case 'DRAFT_START':
+        game.startDraft('pvp', { firstTeam: payload.firstTeam, pickCount: payload.pickCount, remote: true });
+        break;
+      case 'DRAFT_PICK':
+        game.applyRemoteDraftPick(payload);
         break;
       case 'CHAT':
         game.logEvent({ type: 'status', msg: `Enemy: ${payload.msg}` });

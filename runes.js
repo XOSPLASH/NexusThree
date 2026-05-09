@@ -1,6 +1,6 @@
 (function() {
   window.RuneDefs = [
-    { id: "rune_vitality", name: "Vitality I", desc: "+2 Max HP", cost: 2, apply: (u) => { u.maxHp += 1; u.hp += 1; } }, 
+    { id: "rune_vitality", name: "Vitality I", desc: "+2 Max HP", cost: 2, apply: (u) => { u.maxHp += 2; u.hp += 2; } }, 
     { id: "rune_power", name: "Power I", desc: "+2 Damage", cost: 2, apply: (u) => { u.dmg += 2; } },
     { id: "rune_swiftness", name: "Swiftness I", desc: "+1 Move", cost: 3, apply: (u) => { u.move += 1; } },
     { id: "rune_scope", name: "Scope I", desc: "+1 Range", cost: 3, apply: (u) => { u.range += 1; } },

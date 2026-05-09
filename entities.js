@@ -1,55 +1,5 @@
 const unitDefs = {};
-const biomeDefs = {
-  "Boxing Arena": {
-    radius: 2,
-    duration: 4,
-    cost: 4,
-    symbol: "🥊",
-    color: "#f87171", // Reddish
-    desc: "A gritty combat zone where fighters excel. Increases damage by 1 for all Fighter units within the area.",
-    shopLabel: "Fighter DMG",
-    effectType: "stat_buff",
-    stat: "dmg",
-    amount: 1,
-    filter: "Fighter"
-  },
-  "Watchtower": {
-    radius: 2,
-    duration: 5,
-    cost: 6,
-    symbol: "🗼",
-    color: "#60a5fa", // Blueish
-    desc: "A high vantage point for sharpshooters. Increases attack range by 1 for all Marksman units within the area.",
-    shopLabel: "Range Boost",
-    effectType: "stat_buff",
-    stat: "range",
-    amount: 1,
-    filter: "Marksman"
-  },
-  "Sanctum": {
-    radius: 2,
-    duration: 5,
-    cost: 6,
-    symbol: "⛪",
-    color: "#fbbf24", // Golden
-    desc: "A holy sanctuary for healers. Support units in range gain +1 Max AP and get immediate +1 AP contact plus turn-start heal/AP.",
-    shopLabel: "Support AP",
-    effectType: "turn_start_support_buff",
-    amount: 1
-  },
-  "Forge": {
-    radius: 1,
-    duration: 5,
-    cost: 5,
-    symbol: "⚒️",
-    color: "#94a3b8", // Metallic Gray
-    desc: "A heavy industrial zone that reinforces armor. Grants 1 turn of Guard (damage reduction) to all allied units within the area at the start of every turn.",
-    shopLabel: "Team Guard",
-    effectType: "turn_start_guard",
-    amount: 1
-    ,guardValue: 1
-  }
-};
+const biomeDefs = {};
 
 const makeBase = (team, row, col) => ({
   kind: "base",

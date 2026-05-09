@@ -7,6 +7,7 @@ class Game {
     this.abilityMode = null;
     this.buySelection = null;
     this.shopFilters = { filterValue: "all", sort: "cost" };
+    this.draftFilters = { filterValue: "all", sort: "cost" };
     this.overlay = null;
     this.runeTooltip = null;
     this.runeTooltipCleanup = null;
@@ -29,6 +30,17 @@ class Game {
     this.playerTeam = Config.TEAM.PLAYER;
     this.shadowRealmView = false;
     this.previewBiomeCenter = null;
+    this.draftedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
+    this.draft = {
+      active: false,
+      completed: false,
+      mode: "menu",
+      pickCount: 10,
+      sequence: [],
+      currentIndex: 0,
+      firstTeam: Config.TEAM.PLAYER,
+      secondTeam: Config.TEAM.AI
+    };
     this.init();
   }
 
@@ -40,6 +52,7 @@ class Game {
     this.generateTerrain();
 
     this.renderEntities();
+    this.ensureBoardRowLayout();
     this.attachEvents();
     this.updateHUD();
     this.updateUnitPanel(null);
@@ -47,6 +60,7 @@ class Game {
     this.ensureOverlay();
     this.renderBuyControls();
     this.repositionMPUI();
+    this.setupDraftSystem();
     
     if (window.Multiplayer) {
       window.Multiplayer.init(this);
@@ -58,9 +72,9 @@ class Game {
         btn.id = 'shadow-toggle';
         btn.className = 'shadow-toggle-btn';
         btn.title = 'Switch Realm View';
-        // place next to board in the turnbar when available, fallback to body
-        const turnbar = document.querySelector('.turnbar');
-        if (turnbar) turnbar.appendChild(btn);
+        // place next to the board (center-wrap), fallback to body
+        const controlRail = document.getElementById('board-controls-rail');
+        if (controlRail) controlRail.appendChild(btn);
         else document.body.appendChild(btn);
         btn.onclick = () => {
           this.shadowRealmView = !this.shadowRealmView;
@@ -118,6 +132,27 @@ class Game {
     return [Config.ROWS - row, col + 1];
   }
 
+  ensureBoardRowLayout() {
+    const centerWrap = document.querySelector(".center-wrap");
+    const grid = document.getElementById("grid");
+    if (!centerWrap || !grid) return;
+    let row = document.getElementById("board-row");
+    if (!row) {
+      row = document.createElement("div");
+      row.id = "board-row";
+      row.className = "board-row";
+      grid.parentElement.insertBefore(row, grid);
+    }
+    let rail = document.getElementById("board-controls-rail");
+    if (!rail) {
+      rail = document.createElement("div");
+      rail.id = "board-controls-rail";
+      rail.className = "board-controls-rail";
+      row.appendChild(rail);
+    }
+    if (grid.parentElement !== row) row.insertBefore(grid, rail);
+  }
+
   getBiomeDistance(rowA, colA, rowB, colB) {
     const dr = rowA - rowB;
     const dc = colA - colB;
@@ -131,6 +166,11 @@ class Game {
   getEffectiveApMax(unit) {
     if (!unit || unit.kind !== "unit") return unit && unit.apMax ? unit.apMax : 0;
     return Math.max(0, (unit.apMax || 0) + (unit.apMaxBonus || 0));
+  }
+
+  doesBiomeAffectUnit(def, unit) {
+    if (!def || !unit || unit.kind !== "unit") return false;
+    return !def.filter || this.getUnitClass(unit.type) === def.filter;
   }
 
   toBiomeTint(color, alpha) {
@@ -413,14 +453,14 @@ class Game {
         const bDef = window.Entities && window.Entities.biomeDefs && window.Entities.biomeDefs[b.type];
         if (!bDef) continue;
         if (this.isWithinBiomeRadius(ent.row, ent.col, b.r, b.c, b.radius || 0) && b.team === ent.team) {
-          if (!bDef.filter || this.getUnitClass(ent.type) === bDef.filter) {
+          if (this.doesBiomeAffectUnit(bDef, ent)) {
             eligible = true; break;
           }
         }
       }
       if (!eligible && this.biomeSelection && this.previewBiomeCenter) {
         const pbDef = window.Entities && window.Entities.biomeDefs && window.Entities.biomeDefs[this.biomeSelection];
-        if (pbDef && pbDef.filter && this.getUnitClass(ent.type) === pbDef.filter) {
+        if (pbDef && this.doesBiomeAffectUnit(pbDef, ent)) {
           if (this.isWithinBiomeRadius(ent.row, ent.col, this.previewBiomeCenter[0], this.previewBiomeCenter[1], pbDef.radius || 0)) eligible = true;
         }
       }
@@ -786,6 +826,9 @@ class Game {
     else if (def.multiSelect) lines.push(["Targets", `Choose up to ${def.maxTargets || 1}`]);
     else if (def.requiresTarget) lines.push(["Targets", "Single target tile"]);
     else lines.push(["Targets", "Self"]);
+    if (Array.isArray(def.statPreview)) {
+      for (const [label, value] of def.statPreview) lines.push([label, value]);
+    }
     if (def.note) lines.push(["Note", def.note]);
     return lines;
   }
@@ -1237,7 +1280,7 @@ class Game {
       if (!this.isWithinBiomeRadius(unit.row, unit.col, b.r, b.c, b.radius || 0)) continue;
       const def = biomeDefs[b.type];
       if (def && def.effectType === "stat_buff" && def.stat === stat) {
-        if (!def.filter || this.getUnitClass(unit.type) === def.filter) {
+        if (this.doesBiomeAffectUnit(def, unit)) {
           bonus += (def.amount || 0);
         }
       }
@@ -1484,6 +1527,10 @@ class Game {
     const isPlayerTurn = this.turn === Config.TEAM.PLAYER;
     const isMyTurn = this.isMultiplayer ? (this.turn === this.playerTeam) : isPlayerTurn;
     if (this.isGameOver()) return;
+    if (!this.draft.completed) {
+      if (!this.draft.active) this.showDraftModeSelect();
+      return;
+    }
 
     // Respect Shadow Realm visibility: treat hidden shadow units as empty tiles for the viewer
     if (clickedEnt && clickedEnt.inShadowRealm && !this.isEntityVisibleToUnit(null, clickedEnt)) {
@@ -1498,6 +1545,10 @@ class Game {
       if (positions.includes(key)) {
         const cost = this.buySelection.cost;
         const hasType = this.entities.some(e => e.kind === "unit" && e.team === myTeam && e.type === type);
+        if (!this.isUnitDrafted(myTeam, type)) {
+          this.logEvent({ type: "error", msg: `${type} was not drafted.` });
+          return;
+        }
         if (!hasType && this.spendEnergy(myTeam, cost)) {
           const u = Entities.makeUnit(myTeam, type, r, c);
           this.addEntity(u);
@@ -1526,6 +1577,10 @@ class Game {
       const biomeDef = window.Entities.biomeDefs[type];
       
       if (biomeDef && this.energy[myTeam] >= biomeDef.cost) {
+        if (!this.isBiomeDrafted(myTeam, type)) {
+          this.logEvent({ type: "error", msg: `${type} was not drafted.` });
+          return;
+        }
         // Only allow placement on non-nexus tiles (or as specified)
         if (this.terrain[r][c] !== "nexus") {
           this.energy[myTeam] -= biomeDef.cost;
@@ -1876,15 +1931,15 @@ class Game {
       if (!ent || ent.kind !== "unit") continue;
       if (ent.team !== b.team) continue;
       if (!this.isWithinBiomeRadius(ent.row, ent.col, b.r, b.c, b.radius || 0)) continue;
-      if (def.effectType === "turn_start_heal") {
+      if (def.effectType === "turn_start_heal" && this.doesBiomeAffectUnit(def, ent)) {
         ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
       } else if (def.effectType === "turn_start_support_buff") {
-        if (this.getUnitClass(ent.type) === "Support") {
+        if (this.doesBiomeAffectUnit(def, ent)) {
           ent.apMaxBonus = Math.max(ent.apMaxBonus || 0, def.amount || 1);
           ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
           ent.ap = Math.min(this.getEffectiveApMax(ent), ent.ap + (def.amount || 1));
         }
-      } else if (def.effectType === "turn_start_guard") {
+      } else if (def.effectType === "turn_start_guard" && this.doesBiomeAffectUnit(def, ent)) {
         ent.guardTurns = Math.max(ent.guardTurns || 0, def.amount || 1);
         ent.guardValue = Math.max(ent.guardValue || 0, def.guardValue || 1);
       }
@@ -1942,7 +1997,7 @@ class Game {
       if (!this.isWithinBiomeRadius(ent.row, ent.col, b.r, b.c, b.radius || 0)) continue;
       const def = biomeDefs[b.type];
       if (!def) continue;
-      if (def.effectType === "turn_start_support_buff" && this.getUnitClass(ent.type) === "Support") {
+      if (def.effectType === "turn_start_support_buff" && this.doesBiomeAffectUnit(def, ent)) {
         ent.apMaxBonus = Math.max(ent.apMaxBonus || 0, def.amount || 1);
         if (grantImmediateContact) {
           ent.ap = Math.min(this.getEffectiveApMax(ent), ent.ap + (def.amount || 1));
@@ -1951,9 +2006,9 @@ class Game {
           ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
           ent.ap = Math.min(this.getEffectiveApMax(ent), ent.ap + (def.amount || 1));
         }
-      } else if (grantTurnStart && def.effectType === "turn_start_heal") {
+      } else if (grantTurnStart && def.effectType === "turn_start_heal" && this.doesBiomeAffectUnit(def, ent)) {
         ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
-      } else if (grantTurnStart && def.effectType === "turn_start_guard") {
+      } else if (grantTurnStart && def.effectType === "turn_start_guard" && this.doesBiomeAffectUnit(def, ent)) {
         ent.guardTurns = Math.max(ent.guardTurns || 0, def.amount || 1);
         ent.guardValue = Math.max(ent.guardValue || 0, def.guardValue || 1);
       }
@@ -2075,7 +2130,7 @@ class Game {
           if (this.isWithinBiomeRadius(source.row, source.col, b.r, b.c, b.radius || 0)) {
             const def = biomeDefs[b.type];
             if (def && def.effectType === "stat_buff" && def.stat === "dmg") {
-              if (!def.filter || this.getUnitClass(source.type) === def.filter) {
+              if (this.doesBiomeAffectUnit(def, source)) {
                 biomeDmgBonus += (def.amount || 0);
               }
             }
@@ -2154,6 +2209,11 @@ class Game {
   }
 
   async endPlayerTurn() {
+    if (!this.draft.completed) {
+      this.logEvent({ type: "error", msg: "Complete the draft before starting turns." });
+      if (!this.draft.active) this.showDraftModeSelect();
+      return;
+    }
     const isMyTurn = this.isMultiplayer ? (this.turn === this.playerTeam) : (this.turn === Config.TEAM.PLAYER);
     if (!isMyTurn) return;
 
@@ -3300,6 +3360,10 @@ Game.prototype.spawnUnitNearBase = function(team, type, forcedR, forcedC) {
     this.logEvent({ type: "error", msg: "Spawn denied: Skeleton is summon-only" });
     return false;
   }
+  if (!this.isUnitDrafted(team, type)) {
+    this.logEvent({ type: "error", msg: `Spawn denied: ${type} was not drafted` });
+    return false;
+  }
   if (this.purchasedUnits[team].has(type)) return false;
   if (this.entities.some(e => e.kind === "unit" && e.team === team && e.type === type)) return false;
   
@@ -3370,6 +3434,339 @@ Game.prototype.buyRune = function(unit, runeId) {
     window.Multiplayer.sendPacket('BUY_RUNE', { fromR: unit.row, fromC: unit.col, runeId });
   }
   return true;
+};
+
+Game.prototype.setupDraftSystem = function() {
+  if (!document.getElementById("draft-overlay")) {
+    const overlay = document.createElement("div");
+    overlay.id = "draft-overlay";
+    overlay.className = "draft-overlay";
+    document.body.appendChild(overlay);
+  }
+  this.showDraftModeSelect();
+};
+
+Game.prototype.showDraftModeSelect = function() {
+  const overlay = document.getElementById("draft-overlay");
+  if (!overlay || this.draft.completed || this.draft.active) return;
+  overlay.classList.remove("hidden");
+  overlay.innerHTML = `
+    <div class="draft-panel">
+      <div class="draft-hero">
+        <div>
+          <div class="draft-kicker">Match Setup</div>
+          <div class="draft-title">Draft Your Roster</div>
+        </div>
+        <div class="draft-actions">
+          <button class="btn btn-primary" id="draft-ai-start">Play vs AI</button>
+          <button class="btn btn-secondary" id="draft-pvp-wait">Use PvP Lobby</button>
+        </div>
+      </div>
+      <div class="draft-layout">
+        <div class="draft-board-card">
+          <div class="draft-card-title">Map Preview</div>
+          <div class="draft-map-preview">${this.renderDraftMapPreviewHTML()}</div>
+        </div>
+      </div>
+    </div>
+  `;
+  overlay.querySelector("#draft-ai-start").onclick = () => this.startDraft("ai");
+  overlay.querySelector("#draft-pvp-wait").onclick = () => {
+    overlay.classList.add("hidden");
+    this.logEvent({ type: "status", msg: "PvP draft will start when a player connects." });
+  };
+};
+
+Game.prototype.startDraft = function(mode, options) {
+  const opts = options || {};
+  const firstTeam = opts.firstTeam || Config.TEAM.PLAYER;
+  const secondTeam = firstTeam === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER;
+  this.draftedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
+  this.draft = {
+    active: true,
+    completed: false,
+    mode: mode || "ai",
+    pickCount: opts.pickCount || 10,
+    sequence: this.getDraftSequence(firstTeam, secondTeam, opts.pickCount || 10),
+    currentIndex: 0,
+    firstTeam,
+    secondTeam
+  };
+  this.buySelection = null;
+  this.biomeSelection = null;
+  this.board.clearMarks();
+  this.renderDraftOverlay();
+  this.renderBuyControls();
+  if (this.isMultiplayer && !opts.remote && window.Multiplayer) {
+    window.Multiplayer.sendPacket("DRAFT_START", { firstTeam, pickCount: this.draft.pickCount });
+  }
+  this.maybeRunAIDraftPick();
+};
+
+Game.prototype.getDraftSequence = function(firstTeam, secondTeam, pickCount) {
+  const base = [firstTeam, secondTeam, secondTeam, firstTeam];
+  const sequence = [];
+  while (sequence.filter(t => t === firstTeam).length < pickCount || sequence.filter(t => t === secondTeam).length < pickCount) {
+    for (const team of base) {
+      if (sequence.filter(t => t === team).length < pickCount) sequence.push(team);
+    }
+  }
+  return sequence;
+};
+
+Game.prototype.getDraftableUnits = function() {
+  const defs = window.Entities && window.Entities.unitDefs ? window.Entities.unitDefs : {};
+  return Object.keys(defs).filter(type => type !== "Skeleton" && !defs[type].hiddenFromShop);
+};
+
+Game.prototype.getDraftableItems = function() {
+  const biomeDefs = window.Entities && window.Entities.biomeDefs ? window.Entities.biomeDefs : {};
+  return [...this.getDraftableUnits(), ...Object.keys(biomeDefs)];
+};
+
+Game.prototype.isDraftedItem = function(team, type) {
+  if (!this.draft.completed) return false;
+  return !!(this.draftedUnits[team] && this.draftedUnits[team].has(type));
+};
+
+Game.prototype.isUnitDrafted = function(team, type) {
+  const defs = window.Entities && window.Entities.unitDefs ? window.Entities.unitDefs : {};
+  return !!defs[type] && this.isDraftedItem(team, type);
+};
+
+Game.prototype.isBiomeDrafted = function(team, type) {
+  const biomeDefs = window.Entities && window.Entities.biomeDefs ? window.Entities.biomeDefs : {};
+  return !!biomeDefs[type] && this.isDraftedItem(team, type);
+};
+
+Game.prototype.renderDraftMapPreviewHTML = function() {
+  let html = "";
+  for (let r = 0; r < Config.ROWS; r++) {
+    for (let c = 0; c < Config.COLS; c++) {
+      const base = this.entities.find(e => e.kind === "base" && e.row === r && e.col === c);
+      const terrain = this.terrain[r][c] || "plain";
+      const label = base ? this.getDisplayEntitySymbol(base) : "";
+      const baseClass = base ? ` draft-base-${base.team === (this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER) ? "friendly" : "enemy"}` : "";
+      html += `<span class="draft-map-cell draft-terrain-${terrain}${baseClass}">${label}</span>`;
+    }
+  }
+  return html;
+};
+
+Game.prototype.getDraftTeamLabel = function(team) {
+  if (this.isMultiplayer) return team === this.playerTeam ? "You" : "Opponent";
+  return team === Config.TEAM.PLAYER ? "Player" : "AI";
+};
+
+Game.prototype.getDraftDotClass = function(team) {
+  const localTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
+  return team === localTeam ? "friendly" : "enemy";
+};
+
+Game.prototype.renderDraftPicksHTML = function(team) {
+  const picks = Array.from(this.draftedUnits[team] || []);
+  const defs = window.Entities.unitDefs || {};
+  const biomeDefs = window.Entities.biomeDefs || {};
+  const slots = [];
+  for (let i = 0; i < this.draft.pickCount; i++) {
+    const type = picks[i];
+    const def = type ? (defs[type] || biomeDefs[type]) : null;
+    slots.push(`<div class="draft-pick-slot${type ? " filled" : ""}">${def ? `${def.symbol} ${type}` : "Open"}</div>`);
+  }
+  return slots.join("");
+};
+
+Game.prototype.renderDraftOverlay = function() {
+  const overlay = document.getElementById("draft-overlay");
+  if (!overlay || !this.draft.active) return;
+  const defs = window.Entities.unitDefs || {};
+  const biomeDefs = window.Entities.biomeDefs || {};
+  const currentTeam = this.draft.sequence[this.draft.currentIndex];
+  const localTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
+  const canPick = this.draft.mode === "ai" ? currentTeam === Config.TEAM.PLAYER : currentTeam === localTeam;
+  const picked = new Set([...this.draftedUnits[Config.TEAM.PLAYER], ...this.draftedUnits[Config.TEAM.AI]]);
+  const items = this.getDraftableItems().filter(type => !picked.has(type));
+  const sortMode = this.draftFilters.sort === "class" ? "class" : "cost";
+  const classOrder = ["Fighter", "Marksman", "Assassin", "Support", "Tank", "Control", "Biomes", "Other"];
+  const getItemClass = (type) => biomeDefs[type] ? "Biomes" : this.getUnitClass(type);
+  const getItemCost = (type) => biomeDefs[type] ? biomeDefs[type].cost : (defs[type].cost || 0);
+  const groupValues = sortMode === "class"
+    ? classOrder.filter(cls => items.some(t => getItemClass(t) === cls))
+    : Array.from(new Set(items.map(t => String(getItemCost(t))))).map(Number).sort((a, b) => a - b).map(String);
+  const selectedFilter = this.draftFilters.filterValue || "all";
+  const orderPreview = this.draft.sequence.map((team, index) => {
+    const done = index < this.draft.currentIndex ? " done" : "";
+    const current = index === this.draft.currentIndex ? " current" : "";
+    return `<span class="draft-order-dot ${this.getDraftDotClass(team)}${done}${current}" title="${this.getDraftTeamLabel(team)}"></span>`;
+  }).join("");
+
+  overlay.classList.remove("hidden");
+  overlay.innerHTML = `
+    <div class="draft-panel draft-panel-live">
+      <div class="draft-hero">
+        <div>
+          <div class="draft-kicker">${this.draft.mode === "ai" ? "AI Match Draft" : "PvP Draft"}</div>
+          <div class="draft-title">${this.getDraftTeamLabel(currentTeam)} Pick</div>
+        </div>
+        <div class="draft-progress">${this.draft.currentIndex + 1}/${this.draft.sequence.length}</div>
+      </div>
+      <div class="draft-order">${orderPreview}</div>
+      <div class="draft-layout">
+        <div class="draft-board-card">
+          <div class="draft-card-title">Map Preview</div>
+          <div class="draft-map-preview">${this.renderDraftMapPreviewHTML()}</div>
+          <div class="draft-rosters">
+            <div><div class="draft-card-title">${this.getDraftTeamLabel(Config.TEAM.PLAYER)}</div>${this.renderDraftPicksHTML(Config.TEAM.PLAYER)}</div>
+            <div><div class="draft-card-title">${this.getDraftTeamLabel(Config.TEAM.AI)}</div>${this.renderDraftPicksHTML(Config.TEAM.AI)}</div>
+          </div>
+        </div>
+        <div class="draft-unit-list ${canPick ? "" : "waiting"}">
+          <div class="shop-toolbar draft-toolbar">
+            <select class="shop-filter-select draft-filter-select" id="draft-filter-select">
+              ${[`<option value="all">${sortMode === "class" ? "All Classes" : "All Costs"}</option>`]
+                .concat(groupValues.map(opt => `<option value="${opt}">${opt}</option>`)).join("")}
+            </select>
+            <select class="shop-filter-select draft-filter-select" id="draft-sort-select">
+              <option value="cost">Sort by Cost</option>
+              <option value="class">Sort by Class</option>
+            </select>
+          </div>
+          <div class="draft-group-wrap">
+            ${groupValues.map(groupValue => {
+              if (selectedFilter !== "all" && selectedFilter !== groupValue) return "";
+              const grouped = items.filter(t => (sortMode === "class" ? getItemClass(t) : String(getItemCost(t))) === groupValue);
+              if (!grouped.length) return "";
+              return `
+                <div class="buy-group draft-buy-group">
+                  <button type="button" class="group-header btn">${sortMode === "class" ? groupValue : `Cost ${groupValue}`}</button>
+                  <div class="group-list draft-group-list" style="display:${selectedFilter !== "all" ? "grid" : "none"}">
+                    ${grouped.map(type => {
+                      const def = defs[type] || biomeDefs[type];
+                      const isBiome = !!biomeDefs[type];
+                      return `
+                        <button class="draft-unit-card" data-unit="${type}" ${canPick ? "" : "disabled"}>
+                          <span class="draft-unit-symbol">${def.symbol}</span>
+                          <span class="draft-unit-main">
+                            <b>${type}</b>
+                            <small>${isBiome ? "Biome - " + (def.shopLabel || "Board Effect") : this.getUnitClass(type) + " - " + this.getShopRoleSummary(type)}</small>
+                          </span>
+                          <span class="draft-unit-cost">${def.cost || 0}</span>
+                        </button>
+                      `;
+                    }).join("")}
+                  </div>
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  const filterSelect = overlay.querySelector("#draft-filter-select");
+  const sortSelect = overlay.querySelector("#draft-sort-select");
+  if (filterSelect) filterSelect.value = selectedFilter;
+  if (sortSelect) sortSelect.value = sortMode;
+  if (filterSelect) filterSelect.onchange = () => {
+    this.draftFilters.filterValue = filterSelect.value || "all";
+    this.renderDraftOverlay();
+  };
+  if (sortSelect) sortSelect.onchange = () => {
+    this.draftFilters.sort = sortSelect.value || "cost";
+    this.draftFilters.filterValue = "all";
+    this.renderDraftOverlay();
+  };
+  overlay.querySelectorAll(".draft-buy-group .group-header").forEach((btn) => {
+    btn.onclick = () => {
+      const list = btn.nextElementSibling;
+      if (list) list.style.display = list.style.display === "none" ? "grid" : "none";
+    };
+  });
+  overlay.querySelectorAll(".draft-unit-card").forEach(btn => {
+    btn.onclick = () => this.makeDraftPick(btn.dataset.unit);
+  });
+};
+
+Game.prototype.makeDraftPick = function(type, options) {
+  const opts = options || {};
+  if (!this.draft.active || !type) return false;
+  const team = opts.team || this.draft.sequence[this.draft.currentIndex];
+  if (team !== this.draft.sequence[this.draft.currentIndex]) return false;
+  if (!this.getDraftableItems().includes(type)) return false;
+  if (this.draftedUnits[Config.TEAM.PLAYER].has(type) || this.draftedUnits[Config.TEAM.AI].has(type)) return false;
+
+  this.draftedUnits[team].add(type);
+  this.draft.currentIndex += 1;
+  this.logEvent({ type: "status", msg: `${this.getDraftTeamLabel(team)} drafted ${type}` });
+
+  if (this.isMultiplayer && !opts.remote && window.Multiplayer) {
+    window.Multiplayer.sendPacket("DRAFT_PICK", { team, type });
+  }
+
+  if (this.draft.currentIndex >= this.draft.sequence.length) {
+    this.completeDraft();
+  } else {
+    this.renderDraftOverlay();
+    this.maybeRunAIDraftPick();
+  }
+  return true;
+};
+
+Game.prototype.applyRemoteDraftPick = function(payload) {
+  if (!payload) return;
+  this.makeDraftPick(payload.type, { team: payload.team, remote: true });
+};
+
+Game.prototype.maybeRunAIDraftPick = function() {
+  if (!this.draft.active || this.draft.mode !== "ai") return;
+  const currentTeam = this.draft.sequence[this.draft.currentIndex];
+  if (currentTeam !== Config.TEAM.AI) return;
+  window.setTimeout(() => {
+    if (!this.draft.active || this.draft.sequence[this.draft.currentIndex] !== Config.TEAM.AI) return;
+    const pick = this.chooseAIDraftPick();
+    if (pick) this.makeDraftPick(pick, { team: Config.TEAM.AI });
+  }, 320);
+};
+
+Game.prototype.chooseAIDraftPick = function() {
+  const defs = window.Entities.unitDefs || {};
+  const biomeDefs = window.Entities.biomeDefs || {};
+  const picked = new Set([...this.draftedUnits[Config.TEAM.PLAYER], ...this.draftedUnits[Config.TEAM.AI]]);
+  const ownPicks = Array.from(this.draftedUnits[Config.TEAM.AI]);
+  const ownClasses = ownPicks.filter(type => defs[type]).map(type => this.getUnitClass(type));
+  const ownBiomeCount = ownPicks.filter(type => biomeDefs[type]).length;
+  const wantedClasses = ["Tank", "Marksman", "Support", "Control", "Fighter"];
+  const available = this.getDraftableItems().filter(type => !picked.has(type));
+  if (!available.length) return null;
+  const scored = available.map(type => {
+    const isBiome = !!biomeDefs[type];
+    const def = defs[type] || biomeDefs[type];
+    const cls = isBiome ? "Biome" : this.getUnitClass(type);
+    let score = (def.cost || 0) * 0.35;
+    if (isBiome) {
+      score += ownBiomeCount < 3 ? 4 : -3;
+      if (type === "Forge" && ownClasses.includes("Tank")) score += 3;
+      if (type === "Watchtower" && ownClasses.includes("Marksman")) score += 3;
+      if (type === "Sanctum" && ownClasses.includes("Support")) score += 3;
+      if (type === "Boxing Arena" && ownClasses.includes("Fighter")) score += 3;
+    } else {
+      if (wantedClasses.includes(cls) && !ownClasses.includes(cls)) score += 5;
+      if (["Sentinel", "Paladin", "Archer", "Ballista", "Cleric", "Firecaller", "Sludge"].includes(type)) score += 2;
+      if (this.draftedUnits[Config.TEAM.PLAYER].has("Warrior") && cls === "Marksman") score += 2;
+    }
+    return { type, score };
+  }).sort((a, b) => b.score - a.score);
+  return scored[0].type;
+};
+
+Game.prototype.completeDraft = function() {
+  this.draft.active = false;
+  this.draft.completed = true;
+  const overlay = document.getElementById("draft-overlay");
+  if (overlay) overlay.classList.add("hidden");
+  this.logEvent({ type: "status", msg: "Draft complete. Unit shop is now locked to drafted rosters." });
+  this.renderBuyControls();
+  this.updateHUD();
 };
 
 Game.prototype.getAbilityDefForUnit = function(unit) {
@@ -3510,8 +3907,18 @@ Game.prototype.renderBuyControls = function() {
   if (!wrap || !window.Entities || !window.Entities.unitDefs) return;
   const defs = window.Entities.unitDefs;
   const biomeDefs = window.Entities.biomeDefs;
-  const allUnits = Object.keys(defs).filter(t => !defs[t].hiddenFromShop);
-  const allBiomes = Object.keys(biomeDefs);
+  const myTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
+  if (!this.draft.completed) {
+    wrap.innerHTML = `
+      <div class="draft-shop-lock">
+        <b>Draft Required</b>
+        <span>Choose 10 total units and biomes before buying from the shop.</span>
+      </div>
+    `;
+    return;
+  }
+  const allUnits = Object.keys(defs).filter(t => !defs[t].hiddenFromShop && this.isUnitDrafted(myTeam, t));
+  const allBiomes = Object.keys(biomeDefs).filter(t => this.isBiomeDrafted(myTeam, t));
   const sortMode = this.shopFilters.sort === "class" ? "class" : "cost";
   const classOrder = ["Fighter", "Marksman", "Assassin", "Support", "Tank", "Control", "Biomes", "Other"];
   
@@ -3579,7 +3986,6 @@ Game.prototype.renderBuyControls = function() {
       list.style.display = list.style.display === "none" ? "block" : "none";
     });
     
-    const myTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
     const remainingUnits = allUnits.filter(t => !this.purchasedUnits[myTeam].has(t));
     const items = [...remainingUnits, ...allBiomes];
     const grouped = items.filter(t => (sortMode === "class" ? getUnitClass(t) : String(getCost(t))) === groupValue);
@@ -3685,6 +4091,7 @@ Game.prototype.chooseAIPurchaseType = function() {
   const affordable = Object.keys(defs).filter(t => {
     if (t === "Skeleton") return false;
     if (defs[t].hiddenFromShop) return false;
+    if (!this.isUnitDrafted(Config.TEAM.AI, t)) return false;
     return this.energy[Config.TEAM.AI] >= (defs[t].cost || 0);
   });
   if (affordable.length === 0) return null;
