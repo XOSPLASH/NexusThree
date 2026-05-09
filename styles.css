@@ -87,6 +87,7 @@ body {
 
 .board-row {
   width: 100%;
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -94,10 +95,14 @@ body {
 }
 
 .board-controls-rail {
+  position: absolute;
+  top: 8px;
+  left: calc(50% + (var(--grid-size) / 2) + 10px);
   width: 44px;
   min-height: 44px;
   display: flex;
   justify-content: center;
+  z-index: 2;
 }
 
 /* Turnbar */
@@ -762,6 +767,19 @@ body {
   gap: 10px;
   margin-top: 12px;
 }
+.draft-roster-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.draft-roster-meta {
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 .draft-pick-slot {
   min-height: 28px;
   margin-bottom: 6px;
@@ -1355,7 +1373,10 @@ body {
   .center-wrap { width: min(100%, var(--grid-size)); max-width: var(--grid-size); }
   .center-wrap { order: -1; }
   .board-row { gap: 8px; }
-  .board-controls-rail { width: 40px; }
+  .board-controls-rail {
+    width: 40px;
+    left: calc(50% + (var(--grid-size) / 2) + 8px);
+  }
   .turnbar .turn { min-width: auto; }
   #unit-panel { max-height: min(52vh, 560px); }
 }
@@ -1373,6 +1394,7 @@ body {
   .grid { gap: 2px; padding: 6px; border-radius: 8px; }
   .board-row { flex-direction: column; align-items: center; }
   .board-controls-rail {
+    position: static;
     width: 100%;
     min-height: 0;
     justify-content: center;
@@ -1406,6 +1428,7 @@ body {
   .draft-unit-list { grid-template-columns: 1fr; max-height: 46vh; }
   .draft-title { font-size: 20px; }
   .draft-rosters { grid-template-columns: 1fr; }
+  .draft-roster-head { align-items: flex-start; flex-direction: column; gap: 4px; }
 }
 
 @media (max-height: 800px) {

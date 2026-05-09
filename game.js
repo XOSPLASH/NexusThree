@@ -102,9 +102,11 @@ class Game {
 
   repositionMPUI() {
     const mpUI = document.querySelector('.multiplayer-footer');
-    const grid = document.getElementById('grid');
-    if (mpUI && grid && mpUI.parentElement !== grid.parentElement) {
-      grid.parentElement.appendChild(mpUI);
+    const centerWrap = document.querySelector(".center-wrap");
+    const boardRow = document.getElementById("board-row");
+    if (mpUI && centerWrap && boardRow) {
+      const shouldMove = mpUI.parentElement !== centerWrap || mpUI.previousElementSibling !== boardRow;
+      if (shouldMove) centerWrap.insertBefore(mpUI, boardRow.nextSibling);
     }
   }
 
@@ -3576,6 +3578,22 @@ Game.prototype.renderDraftPicksHTML = function(team) {
   return slots.join("");
 };
 
+Game.prototype.getDraftAverageCostLabel = function(team) {
+  const defs = window.Entities.unitDefs || {};
+  const biomeDefs = window.Entities.biomeDefs || {};
+  const picks = Array.from(this.draftedUnits[team] || []);
+  if (!picks.length) return "Avg Cost: --";
+  const totalCost = picks.reduce((sum, type) => {
+    const def = defs[type] || biomeDefs[type] || {};
+    return sum + Number(def.cost || 0);
+  }, 0);
+  const averageCost = totalCost / picks.length;
+  const formattedCost = Number.isInteger(averageCost)
+    ? String(averageCost)
+    : averageCost.toFixed(1).replace(/\.0$/, "");
+  return `Avg Cost: ${formattedCost}`;
+};
+
 Game.prototype.renderDraftOverlay = function() {
   const overlay = document.getElementById("draft-overlay");
   if (!overlay || !this.draft.active) return;
@@ -3616,8 +3634,20 @@ Game.prototype.renderDraftOverlay = function() {
           <div class="draft-card-title">Map Preview</div>
           <div class="draft-map-preview">${this.renderDraftMapPreviewHTML()}</div>
           <div class="draft-rosters">
-            <div><div class="draft-card-title">${this.getDraftTeamLabel(Config.TEAM.PLAYER)}</div>${this.renderDraftPicksHTML(Config.TEAM.PLAYER)}</div>
-            <div><div class="draft-card-title">${this.getDraftTeamLabel(Config.TEAM.AI)}</div>${this.renderDraftPicksHTML(Config.TEAM.AI)}</div>
+            <div>
+              <div class="draft-roster-head">
+                <div class="draft-card-title">${this.getDraftTeamLabel(Config.TEAM.PLAYER)}</div>
+                <div class="draft-roster-meta">${this.getDraftAverageCostLabel(Config.TEAM.PLAYER)}</div>
+              </div>
+              ${this.renderDraftPicksHTML(Config.TEAM.PLAYER)}
+            </div>
+            <div>
+              <div class="draft-roster-head">
+                <div class="draft-card-title">${this.getDraftTeamLabel(Config.TEAM.AI)}</div>
+                <div class="draft-roster-meta">${this.getDraftAverageCostLabel(Config.TEAM.AI)}</div>
+              </div>
+              ${this.renderDraftPicksHTML(Config.TEAM.AI)}
+            </div>
           </div>
         </div>
         <div class="draft-unit-list ${canPick ? "" : "waiting"}">
