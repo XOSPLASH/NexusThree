@@ -1,22 +1,22 @@
-// Warrior abilities
+﻿// Warrior abilities
 (function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Warrior = {
-    hp: 8, range: 1, dmg: 2, move: 2, cost: 3,
+    hp: 80, range: 1, dmg: 20, move: 2, cost: 3,
     class: "Fighter",
     role: "Frontline Bruiser",
-    symbol: "⚔️", ability: "Piercing frontline strike",
+    symbol: "\u2694\uFE0F", ability: "Piercing frontline strike",
     rangePattern: "orthogonal", movePattern: "orthogonal",
     cooldowns: { "Charge": 3 },
     leveling: {
       xpToLevel: { 2: 5, 3: 11 },
       levels: {
         2: [
-          { label: "+1 Damage", stat: "dmg", amount: 1 },
+          { label: "+10 Damage", stat: "dmg", amount: 10 },
         ],
         3: [
-          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "+10 Max HP", stat: "maxHp", amount: 10, heal: 10 },
           { label: "+1 Move", stat: "move", amount: 1 },
         ],
       },
@@ -27,7 +27,7 @@
     desc: "Choose any tile in a straight line up to 3. Hit every enemy in that line, then dash to the last open tile before the block. Cooldown 3.",
     range: 3,
     rangePattern: "straight",
-    damage: 2,
+    damage: 20,
     piercing: true,
     piercingLabel: "Damages every enemy on the line",
     requiresTarget: true,
@@ -45,7 +45,7 @@
         if (terr === "wall" || terr === "water" || terr === "fortwall") break;
         const occ = game.occupants[rr][cc];
         if (occ && occ.team !== unit.team) {
-          game.applyDamage(occ, 2, unit);
+          game.applyDamage(occ, 20, unit);
         }
         if (!occ && !blockedByUnit) lastOpen = [rr, cc];
         if (occ) blockedByUnit = true;
@@ -62,3 +62,5 @@
   });
   window.Abilities.Warrior = [makeCharge()];
 })(); 
+
+

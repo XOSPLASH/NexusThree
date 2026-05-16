@@ -1,10 +1,10 @@
-// Cleric abilities
+﻿// Cleric abilities
 (function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Cleric = {
-    hp: 5, range: 2, dmg: 1, move: 2, cost: 2,
-    symbol: "⚕️", ability: "Mass Healing",
+    hp: 50, range: 2, dmg: 10, move: 2, cost: 2,
+    symbol: "\u2695\uFE0F", ability: "Mass Healing",
     rangePattern: "square", movePattern: "orthogonal",
     cooldowns: { "Mass Heal": 4 },
     leveling: {
@@ -14,7 +14,7 @@
           { label: "+1 Range", stat: "range", amount: 1 },
         ],
         3: [
-          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "+10 Max HP", stat: "maxHp", amount: 10, heal: 10 },
           { label: "Mass Heal cooldown -1", stat: "cooldown", ability: "Mass Heal", amount: -1 },
         ],
       },
@@ -22,10 +22,10 @@
   };
   const makeMassHeal = () => ({
     name: "Mass Heal",
-    desc: "Heal all adjacent allies for 2 HP.",
+    desc: "Heal all adjacent allies for 20 HP.",
     range: 2,
     rangePattern: "square",
-    heal: 2,
+    heal: 20,
     requiresTarget: false,
     computeTargets(game, unit) { return []; }, // No target selection needed
     perform(game, unit) {
@@ -37,7 +37,7 @@
           if (!game.inBounds(r, c)) continue;
           const occ = game.occupants[r][c];
           if (occ && occ.kind === "unit" && occ.team === unit.team) {
-            occ.hp = Math.min(occ.maxHp, occ.hp + 2);
+            occ.hp = Math.min(occ.maxHp, occ.hp + 20);
             healed++;
             const cell = game.board.getCell(r, c);
             if (cell) {
@@ -56,3 +56,5 @@
   });
   window.Abilities.Cleric = [makeMassHeal()];
 })();
+
+

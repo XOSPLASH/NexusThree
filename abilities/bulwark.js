@@ -1,10 +1,10 @@
-(function() {
+﻿(function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Bulwark = {
-    hp: 9, range: 1, dmg: 2, move: 2, cost: 4,
+    hp: 90, range: 1, dmg: 20, move: 2, cost: 4,
     class: "Tank",
-    symbol: "🦬", ability: "Protect nearby allies",
+    symbol: "\uD83E\uDDEC", ability: "Protect nearby allies",
     role: "Ally Protector",
     rangePattern: "orthogonal", movePattern: "orthogonal",
     cooldowns: { "Shield Line": 3 },
@@ -12,10 +12,10 @@
       xpToLevel: { 2: 7, 3: 15 },
       levels: {
         2: [
-          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "+10 Max HP", stat: "maxHp", amount: 10, heal: 10 },
         ],
         3: [
-          { label: "+1 Damage", stat: "dmg", amount: 1 },
+          { label: "+10 Damage", stat: "dmg", amount: 10 },
           { label: "Shield Line cooldown -1", stat: "cooldown", ability: "Shield Line", amount: -1 },
         ],
       },
@@ -25,7 +25,7 @@
   window.Abilities = window.Abilities || {};
   window.Abilities.Bulwark = [{
     name: "Shield Line",
-    desc: "Brace Bulwark and adjacent allies for 2 turns. Braced units take 1 less damage.",
+    desc: "Brace Bulwark and adjacent allies for 2 turns. Braced units take 10 less damage.",
     duration: 2,
     requiresTarget: false,
     perform(game, unit) {
@@ -38,7 +38,7 @@
       }
       for (const ally of protectedUnits) {
         ally.guardTurns = Math.max(ally.guardTurns || 0, this.duration || 2);
-        ally.guardValue = Math.max(ally.guardValue || 0, 1);
+        ally.guardValue = Math.max(ally.guardValue || 0, 10);
         const cell = game.board.getCell(ally.row, ally.col);
         if (cell) {
           cell.classList.add("ability-anim");
@@ -54,3 +54,5 @@
     },
   }];
 })();
+
+

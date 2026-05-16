@@ -226,7 +226,7 @@ class Game {
     if (def && def.role) return def.role;
     const roles = {
       Warrior: "Frontline Bruiser",
-      Archer: "Long-Range Skirmisher",
+      Archer: "Long-Range Striker",
       Mage: "Burst Caster",
       Paladin: "Shield Anchor",
       Berserker: "Aggro Diver",
@@ -246,10 +246,13 @@ class Game {
       Watchtower: "Long-Range Defense",
       Sanctum: "Healing Support",
       Forge: "Aegis Support",
-      Tidewalker: "Water Skirmisher",
+      Tidewalker: "Water Striker",
       Shade: "Shadow Assassin",
       Bulwark: "Ally Protector",
       Stalker: "Forest Ambusher",
+      Slicer: "Tank Killer",
+      "Bounty Hunter": "High Risk Carry",
+      Silencer: "Attack Lockdown",
     };
     return roles[type] || "Battle Unit";
   }
@@ -257,30 +260,43 @@ class Game {
   getUnitClass(type) {
     const def = window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[type];
     if (def && def.class) return def.class;
+    if (def && (def.thrower || String(def.rangePattern || "").toLowerCase() === "thrower")) return "Artillery";
     const classes = {
-      Warrior: "Fighter",
-      Berserker: "Fighter",
-      Avenger: "Fighter",
-      Druid: "Fighter",
-      Paladin: "Tank",
-      Sentinel: "Tank",
-      Bulwark: "Tank",
-      Archer: "Marksman",
-      Tidewalker: "Marksman",
-      Ballista: "Marksman",
-      Shade: "Assassin",
+      // Artillery units
+      Alchemist: "Artillery",
+      Ballista: "Artillery",
+      // Assassin units
       Rogue: "Assassin",
+      Shade: "Assassin",
       Stalker: "Assassin",
-      Magnet: "Control",
+      // Breaker units
+      Slicer: "Breaker",
+      // Control units
       Hex: "Control",
       Mage: "Control",
-      Firecaller: "Control",
-      Sludge: "Control",
       Necromancer: "Control",
-      Alchemist: "Support",
-      Cleric: "Support",
+      // Disruptor units
+      Firecaller: "Disruptor",
+      Magnet: "Disruptor",
+      Silencer: "Disruptor",
+      Sludge: "Disruptor",
+      // Fighter units
+      Avenger: "Fighter",
+      Berserker: "Fighter",
+      Druid: "Fighter",
+      Warrior: "Fighter",
+      // Marksman units
+      Archer: "Marksman",
+      "Bounty Hunter": "Marksman",
+      Tidewalker: "Marksman",
+      // Support units
       Builder: "Support",
+      Cleric: "Support",
       Skeleton: "Support",
+      // Tank units
+      Bulwark: "Tank",
+      Paladin: "Tank",
+      Sentinel: "Tank",
     };
     return classes[type] || "Other";
   }
@@ -643,8 +659,14 @@ class Game {
         aValue = this.energy[this.playerTeam === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER];
       }
       
-      if (pEl) pEl.textContent = `${pLabel}: ${pValue}`;
-      if (aEl) aEl.textContent = `${aLabel}: ${aValue}`;
+      const pTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
+      const aTeam = this.isMultiplayer
+        ? (this.playerTeam === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER)
+        : Config.TEAM.AI;
+      const pNext = this.getUpcomingGoldGain(pTeam);
+      const aNext = this.getUpcomingGoldGain(aTeam);
+      if (pEl) pEl.textContent = `${pLabel}: 🪙 ${pValue} (+${pNext} next)`;
+      if (aEl) aEl.textContent = `${aLabel}: 🪙 ${aValue} (+${aNext} next)`;
     }
     const cancelBtn = document.getElementById("cancel-ability-btn");
     if (cancelBtn) {
@@ -685,8 +707,8 @@ class Game {
       wall: { icon: "🧱", name: "Wall", desc: "A basic wall tile that blocks movement and line paths.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "wall" },
       fortwall: { icon: "⬜", name: "Fortwall", desc: "A reinforced wall built by the Builder. It blocks movement.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "fortwall" },
       bridge: { icon: "🌉", name: "Bridge", desc: "A passable bridge over water created by construction.", notes: [["Movement", "Passable"], ["Builder", "Can revert"]], subtype: "bridge" },
-      forest: { icon: "🌲", name: "Forest", desc: "Dense cover that reduces incoming ranged damage. Assassins hit harder from it.", notes: [["Movement", "Passable"], ["Cover", "-1 ranged damage"], ["Assassin", "+1 damage from forest"]], subtype: "forest" },
-      ruins: { icon: "▥", name: "Ruins", desc: "Broken high ground. Marksmen attack harder from ruins and tanks take less damage on them.", notes: [["Movement", "Passable"], ["Marksman", "+1 damage from ruins"], ["Tank", "-1 damage while standing here"]], subtype: "ruins" },
+      forest: { icon: "🌲", name: "Forest", desc: "Dense cover that reduces incoming ranged damage. Assassins hit harder from it.", notes: [["Movement", "Passable"], ["Cover", "-10 ranged damage"], ["Assassin", "+10 damage from forest"], ["Builder", "Can clear"]], subtype: "forest" },
+      ruins: { icon: "▥", name: "Ruins", desc: "Broken high ground. Marksmen attack harder from ruins and tanks take less damage on them.", notes: [["Movement", "Passable"], ["Marksman", "+10 damage from ruins"], ["Tank", "-10 damage while standing here"]], subtype: "ruins" },
       nexus: { icon: "💠", name: "Nexus", desc: "Standing here captures the nexus for your team and helps units level up.", notes: [["Effect", "Capture point"], ["Bonus", "Grants XP"]], subtype: "nexus" },
       grass: { icon: "🟩", name: "Open Ground", desc: "Open ground with no special effect.", notes: [["Movement", "Passable"], ["Effect", "None"]], subtype: "grass" }
     };
@@ -703,6 +725,9 @@ class Game {
   }
 
   formatPatternLabel(pattern) {
+    const key = String(pattern || "").toLowerCase();
+    if (key === "artillery") return "artillery";
+    if (key === "thrower") return "thrower";
     return String(pattern || "").replace(/_/g, " ");
   }
 
@@ -724,11 +749,14 @@ class Game {
   showRuneDetails(rune, anchorEl) {
     if (!rune || !anchorEl) return;
     this.hideRuneDetails();
+    const title = `${rune.name || "Rune"}`;
+    const progress = this.getRuneProgressLabel(rune);
     const tip = document.createElement("div");
     tip.className = "rune-tooltip";
     tip.innerHTML = `
-      <div class="rune-tooltip-name">${rune.name}</div>
+      <div class="rune-tooltip-name">${title}</div>
       <div class="rune-tooltip-desc">${rune.desc}</div>
+      <div class="rune-tooltip-meta">${progress}</div>
     `;
     document.body.appendChild(tip);
     const rect = anchorEl.getBoundingClientRect();
@@ -816,7 +844,7 @@ class Game {
     if (unit.isBeast && (unit.beastTurns || 0) > 0) push("Beast Form", Math.max(1, unit.beastTurns || 0));
     if (unit.hexMarked && (unit.hexTurns || 0) > 0) push("Hexed", Math.max(1, unit.hexTurns || 0));
     if (unit.guardTurns && unit.guardTurns > 0) {
-      const gv = (unit.guardValue != null && unit.guardValue !== 0) ? unit.guardValue : 1;
+      const gv = (unit.guardValue != null && unit.guardValue !== 0) ? unit.guardValue : 10;
       const label = (gv > 0 && gv < 1) ? `Guarded (-${Math.round(gv * 100)}%)` : `Guarded (-${gv} dmg)`;
       statuses.push(`${label} (${unit.guardTurns})`);
     }
@@ -826,11 +854,25 @@ class Game {
     if (unit.siegeTurns && unit.siegeTurns > 0) push("Sieged", unit.siegeTurns);
     if (unit.burnTurns && unit.burnTurns > 0) push("Burning", unit.burnTurns);
     if (unit.stunnedTurns && unit.stunnedTurns > 0) push("Stunned", unit.stunnedTurns);
+    if (unit.silencedTurns && unit.silencedTurns > 0) push("Silenced", unit.silencedTurns);
     if ((unit.apMaxBonus || 0) > 0) statuses.push(`Sanctified (+${unit.apMaxBonus} AP Max)`);
     if (unit.stuck) {
       const hazard = this.hazards && this.hazards[unit.row] && this.hazards[unit.row][unit.col];
       const turns = hazard && hazard.kind === "sludge" ? hazard.turns : 0;
       statuses.push(turns > 0 ? `Trapped (${turns})` : `Trapped (Mire)`);
+    }
+    const terrain = this.terrain && this.terrain[unit.row] && this.terrain[unit.row][unit.col];
+    if (terrain === "forest") {
+      const forestText = this.getUnitClassFor(unit) === "Assassin"
+        ? "Forest Cover (-10 ranged dmg, +10 attack)"
+        : "Forest Cover (-10 ranged dmg)";
+      statuses.push(forestText);
+    }
+    if (terrain === "ruins") {
+      const ruinBits = [];
+      if (this.getUnitClassFor(unit) === "Marksman") ruinBits.push("+10 attack");
+      if (this.getUnitClassFor(unit) === "Tank") ruinBits.push("-10 damage taken");
+      statuses.push(ruinBits.length ? `Ruins (${ruinBits.join(", ")})` : "Ruins (high ground)");
     }
     return statuses;
   }
@@ -862,6 +904,82 @@ class Game {
     }
     if (def.note) lines.push(["Note", def.note]);
     return lines;
+  }
+
+  getRuneDefById(runeId) {
+    return (window.RuneDefs || []).find(r => r.id === runeId) || null;
+  }
+
+  getRuneStage(runeDef, level) {
+    if (!runeDef || !Array.isArray(runeDef.stages)) return null;
+    return runeDef.stages.find(stage => stage.level === level) || null;
+  }
+
+  getRuneMaxLevel(runeDef) {
+    return runeDef && Array.isArray(runeDef.stages) ? runeDef.stages.length : 1;
+  }
+
+  createOwnedRune(runeDef) {
+    const firstStage = this.getRuneStage(runeDef, 1);
+    if (!runeDef || !firstStage) return null;
+    return {
+      id: runeDef.id,
+      baseName: runeDef.baseName || firstStage.name,
+      level: 1,
+      maxLevel: this.getRuneMaxLevel(runeDef),
+      name: firstStage.name,
+      desc: firstStage.desc,
+      turnsUntilNext: Number(firstStage.turnsToNext || 0),
+      turnsElapsed: 0,
+    };
+  }
+
+  syncOwnedRunePresentation(ownedRune, runeDef) {
+    if (!ownedRune || !runeDef) return ownedRune;
+    const level = Math.max(1, Math.min(this.getRuneMaxLevel(runeDef), Number(ownedRune.level || 1)));
+    const stage = this.getRuneStage(runeDef, level);
+    ownedRune.level = level;
+    ownedRune.maxLevel = this.getRuneMaxLevel(runeDef);
+    ownedRune.name = stage && stage.name ? stage.name : (ownedRune.name || runeDef.baseName || "Rune");
+    ownedRune.desc = stage && stage.desc ? stage.desc : (ownedRune.desc || "");
+    ownedRune.turnsUntilNext = stage && stage.turnsToNext ? Number(stage.turnsToNext) : 0;
+    if (ownedRune.turnsElapsed == null) ownedRune.turnsElapsed = 0;
+    return ownedRune;
+  }
+
+  getRuneProgressLabel(ownedRune) {
+    if (!ownedRune) return "";
+    const maxLevel = Math.max(1, Number(ownedRune.maxLevel || 1));
+    const level = Math.max(1, Number(ownedRune.level || 1));
+    if (level >= maxLevel || !ownedRune.turnsUntilNext) return "Maxed";
+    const left = Math.max(0, Number(ownedRune.turnsUntilNext || 0) - Number(ownedRune.turnsElapsed || 0));
+    return left <= 1 ? "Evolves next turn" : `Evolves in ${left} turns`;
+  }
+
+  advanceRuneProgressForTeam(team) {
+    const teamLabel = this.isMultiplayer
+      ? (team === this.playerTeam ? "Your" : "Enemy")
+      : (team === Config.TEAM.PLAYER ? "Player" : "AI");
+    for (const unit of this.entities) {
+      if (!unit || unit.kind !== "unit" || unit.team !== team || !Array.isArray(unit.runes)) continue;
+      for (const ownedRune of unit.runes) {
+        const runeDef = this.getRuneDefById(ownedRune.id);
+        if (!runeDef) continue;
+        this.syncOwnedRunePresentation(ownedRune, runeDef);
+        if ((ownedRune.level || 1) >= (ownedRune.maxLevel || 1) || !ownedRune.turnsUntilNext) continue;
+        ownedRune.turnsElapsed = Number(ownedRune.turnsElapsed || 0) + 1;
+        if (ownedRune.turnsElapsed < ownedRune.turnsUntilNext) continue;
+        const nextLevel = Math.min((ownedRune.level || 1) + 1, ownedRune.maxLevel || 1);
+        const stage = this.getRuneStage(runeDef, nextLevel);
+        if (!stage) continue;
+        stage.apply(unit);
+        ownedRune.level = nextLevel;
+        ownedRune.turnsElapsed = 0;
+        this.syncOwnedRunePresentation(ownedRune, runeDef);
+        if (unit.hp > unit.maxHp) unit.hp = unit.maxHp;
+        this.logEvent({ type: "status", msg: `${teamLabel} ${unit.type}'s ${ownedRune.name} awakened.` });
+      }
+    }
   }
 
   updateUnitPanel(ent) {
@@ -1006,10 +1124,15 @@ class Game {
       const displayedDmg = ent.dmg + dmgBonus;
       const displayedRange = ent.range + rangeBonus;
       const effectiveApMax = this.getEffectiveApMax(ent);
+      const rangePatternLabel = this.formatPatternLabel(ent.rangePattern || "square");
+      const throwerLabel = ent.thrower ? "thrower (attacks over walls)" : "";
+      const rangeSub = throwerLabel ? `${rangePatternLabel} • ${throwerLabel}` : rangePatternLabel;
+      const damageValue = ent.type === "Slicer" ? "30%" : `${displayedDmg}`;
+      const damageSub = ent.type === "Slicer" ? "current" : "";
       const stats = [
         ["HP", `${ent.hp}/${ent.maxHp}`, base.hp],
-        ["Damage", `${displayedDmg}`, base.dmg],
-        ["Range", `${displayedRange}`, base.range, this.formatPatternLabel(ent.rangePattern || "square")],
+        ["Damage", damageValue, base.dmg, damageSub],
+        ["Range", `${displayedRange}`, base.range, rangeSub],
         ["Movement", `${ent.move}`, base.move, this.formatPatternLabel(ent.movePattern || "orthogonal")],
         ["AP", `${ent.ap}/${effectiveApMax}`],
       ];
@@ -1076,8 +1199,12 @@ class Game {
         const slot = document.createElement("div");
         const rune = ent.runes[i];
         if (rune) {
+          const runeDef = this.getRuneDefById(rune.id);
+          this.syncOwnedRunePresentation(rune, runeDef);
           slot.className = "rune-slot filled";
-          slot.textContent = rune.name[0];
+          slot.innerHTML = `
+            <span class="rune-slot-glyph">${(rune.name || "R")[0]}</span>
+          `;
           slot.title = `${rune.name}: ${rune.desc}`;
           slot.onmouseenter = () => this.showRuneDetails(rune, slot);
           slot.onfocus = () => this.showRuneDetails(rune, slot);
@@ -1096,7 +1223,26 @@ class Game {
         }
         slots.appendChild(slot);
       }
+      const runeSummary = document.createElement("div");
+      runeSummary.className = "rune-summary-list";
+      if (ent.runes.length) {
+        runeSummary.innerHTML = ent.runes.map((rune) => {
+          const runeDef = this.getRuneDefById(rune.id);
+          this.syncOwnedRunePresentation(rune, runeDef);
+          return `
+            <div class="rune-summary-item">
+              <div class="rune-summary-head">
+                <span class="rune-summary-name">${rune.name}</span>
+              </div>
+              <div class="rune-summary-meta">${this.getRuneProgressLabel(rune)}</div>
+            </div>
+          `;
+        }).join("");
+      } else {
+        runeSummary.innerHTML = `<div class="rune-summary-empty">No runes socketed yet.</div>`;
+      }
       runePanel.appendChild(slots);
+      runePanel.appendChild(runeSummary);
       runeWrap.appendChild(runeLabel);
       runeWrap.appendChild(runePanel);
       unitPanel.appendChild(levelingWrap);
@@ -1209,26 +1355,39 @@ class Game {
     title.textContent = "Runes";
     panel.appendChild(title);
 
+    const shopIntro = document.createElement("div");
+    shopIntro.className = "rune-shop-intro";
+    shopIntro.textContent = "Runes evolve on their own over your unit's turns. Higher-tier runes stop at Lv2, lighter runes can grow to Lv3.";
+    panel.appendChild(shopIntro);
+
     const list = document.createElement("div");
     list.className = "rune-list";
     
     const myTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
     window.RuneDefs.forEach(def => {
+      const owned = unit.runes.find(r => r.id === def.id);
+      if (owned) this.syncOwnedRunePresentation(owned, def);
+      const canBuyFresh = unit.runes.length < Math.min(3, unit.level || 1);
+      const canAct = !owned && canBuyFresh;
+      const firstStage = this.getRuneStage(def, 1) || {};
       const item = document.createElement("div");
       item.className = "rune-item";
+      const stageNotes = (def.stages || []).map((stage) => {
+        const timer = stage.turnsToNext ? ` • ${stage.turnsToNext} turns to next` : "";
+        return `Lv${stage.level}: ${stage.desc}${timer}`;
+      }).join(" · ");
       item.innerHTML = `
         <div class="rune-info">
-          <div class="rune-name">${def.name}</div>
-          <div class="rune-desc">${def.desc}</div>
+          <div class="rune-name">${(owned ? owned.name : firstStage.name) || def.baseName}</div>
+          <div class="rune-desc">${(owned ? owned.desc : firstStage.desc) || ""}</div>
+          <div class="rune-path">${stageNotes}</div>
         </div>
-        <button class="btn btn-sm">Buy (${def.cost})</button>
+        <button class="btn btn-sm">${owned ? this.getRuneProgressLabel(owned) : `Buy (${def.cost})`}</button>
       `;
-    const btn = item.querySelector("button");
-    const hasRune = unit.runes.some(r => r.id === def.id);
-    if (this.energy[myTeam] < def.cost || hasRune || unit.runes.length >= Math.min(3, unit.level || 1)) {
-      btn.disabled = true;
-      btn.textContent = hasRune ? "Owned" : `Buy (${def.cost})`;
-    }
+      const btn = item.querySelector("button");
+      if (!canAct || this.energy[myTeam] < def.cost) {
+        btn.disabled = true;
+      }
       btn.onclick = () => {
         if (this.buyRune(unit, def.id)) {
           shop.classList.add("hidden");
@@ -1260,14 +1419,14 @@ class Game {
     }
     if (pattern === "manhattan") return Math.max(a, b);
     if (pattern === "circle" || pattern === "euclidean") return Math.sqrt(dr * dr + dc * dc);
-    if (pattern === "straight" || pattern === "thrower") return (a === 0 || b === 0) ? Math.max(a, b) : Infinity;
+    if (pattern === "straight" || pattern === "artillery" || pattern === "thrower") return (a === 0 || b === 0) ? Math.max(a, b) : Infinity;
     return Math.max(a, b);
   }
 
   getPatternTiles(unit, range, pattern) {
     const res = [];
     const p = (pattern || "radius").toLowerCase();
-    if (p === "straight") {
+    if (p === "straight" || p === "artillery" || p === "thrower") {
       const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
       for (const [dr, dc] of dirs) {
         for (let s = 1; s <= range; s++) {
@@ -1408,6 +1567,7 @@ class Game {
 
   getAttackTargets(unit) {
     if (unit.ap < 1) return [];
+    if ((unit.silencedTurns || 0) > 0) return [];
     const res = [];
     // Biome range bonus (computed centrally)
     const effectiveRange = unit.range + this.getBiomeStatBonus(unit, 'range');
@@ -1419,7 +1579,7 @@ class Game {
       const dist = this.distanceByPattern(unit, ent.row - unit.row, ent.col - unit.col);
       if (dist <= effectiveRange) res.push([ent.row, ent.col]);
     }
-    const isThrower = ((unit.rangePattern || "").toLowerCase() === "thrower");
+    const isThrower = !!unit.thrower || ((unit.rangePattern || "").toLowerCase() === "thrower");
     if (isThrower) return res;
     return res.filter(([tr, tc]) => this.hasLineOfSight(unit.row, unit.col, tr, tc));
   }
@@ -1452,6 +1612,7 @@ class Game {
   }
 
   getAttackRangeTiles(unit) {
+    if ((unit.silencedTurns || 0) > 0) return [];
     const res = [];
     
     // Biome range bonus (use helper so UI and logic stay in sync)
@@ -1465,7 +1626,7 @@ class Game {
         if (dr === 0 && dc === 0) continue;
         const dist = this.distanceByPattern(unit, dr, dc);
         if (dist <= effectiveRange) {
-          const isThrower = ((unit.rangePattern || "").toLowerCase() === "thrower");
+          const isThrower = !!unit.thrower || ((unit.rangePattern || "").toLowerCase() === "thrower");
           if (isThrower || this.hasLineOfSight(unit.row, unit.col, r, c)) res.push([r, c]);
         }
       }
@@ -1969,7 +2130,7 @@ class Game {
         }
       } else if (def.effectType === "turn_start_guard" && this.doesBiomeAffectUnit(def, ent)) {
         ent.guardTurns = Math.max(ent.guardTurns || 0, def.amount || 1);
-        ent.guardValue = Math.max(ent.guardValue || 0, def.guardValue || 1);
+        ent.guardValue = Math.max(ent.guardValue || 0, def.guardValue || 10);
       }
     }
     this.renderEntities();
@@ -2038,7 +2199,7 @@ class Game {
         ent.hp = Math.min(ent.maxHp, ent.hp + (def.amount || 1));
       } else if (grantTurnStart && def.effectType === "turn_start_guard" && this.doesBiomeAffectUnit(def, ent)) {
         ent.guardTurns = Math.max(ent.guardTurns || 0, def.amount || 1);
-        ent.guardValue = Math.max(ent.guardValue || 0, def.guardValue || 1);
+        ent.guardValue = Math.max(ent.guardValue || 0, def.guardValue || 10);
       }
     }
     ent.ap = Math.min(ent.ap || 0, this.getEffectiveApMax(ent));
@@ -2076,6 +2237,9 @@ class Game {
       if (ent.guardTurns && ent.guardTurns > 0) {
         ent.guardTurns = Math.max(0, ent.guardTurns - 1);
       }
+      if (ent.silencedTurns && ent.silencedTurns > 0) {
+        ent.silencedTurns = Math.max(0, ent.silencedTurns - 1);
+      }
       if (ent.shadowTurns && ent.shadowTurns > 0) {
         ent.shadowTurns = Math.max(0, ent.shadowTurns - 1);
         if (ent.shadowTurns <= 0) ent.inShadowRealm = false;
@@ -2102,6 +2266,9 @@ class Game {
       if (ent.guardTurns && ent.guardTurns > 0) {
         ent.guardTurns = Math.max(0, ent.guardTurns - 1);
       }
+      if (ent.silencedTurns && ent.silencedTurns > 0) {
+        ent.silencedTurns = Math.max(0, ent.silencedTurns - 1);
+      }
       if (ent.shadowTurns && ent.shadowTurns > 0) {
         ent.shadowTurns = Math.max(0, ent.shadowTurns - 1);
         if (ent.shadowTurns <= 0) ent.inShadowRealm = false;
@@ -2116,6 +2283,7 @@ class Game {
     this.tickBiomes(team);
     this.applyHazardsForTeam(team);
     this.tickCooldowns(team);
+    this.advanceRuneProgressForTeam(team);
     this.renderEntities();
   }
 
@@ -2146,7 +2314,7 @@ class Game {
       return;
     }
     const before = target.hp;
-    const bonus = (target.hexMarked ? 1 : 0);
+    const bonus = (target.hexMarked ? 10 : 0);
     const abilityBonus = (source && source.kind === "unit" && this.abilityMode && this.abilityMode.unit === source) ? ((source.level || 1) - 1) : 0;
     
     // Biome buffs for source
@@ -2174,13 +2342,13 @@ class Game {
       const sourceClass = this.getUnitClassFor(source);
       const targetClass = this.getUnitClassFor(target);
       const dist = Math.max(Math.abs(source.row - target.row), Math.abs(source.col - target.col));
-      if (sourceTerrain === "forest" && sourceClass === "Assassin") effectiveDmg += 1;
-      if (sourceTerrain === "ruins" && sourceClass === "Marksman") effectiveDmg += 1;
-      if (targetTerrain === "forest" && dist > 1 && sourceClass !== "Assassin") effectiveDmg = Math.max(1, effectiveDmg - 1);
-      if (targetTerrain === "ruins" && targetClass === "Tank") effectiveDmg = Math.max(1, effectiveDmg - 1);
+      if (sourceTerrain === "forest" && sourceClass === "Assassin") effectiveDmg += 10;
+      if (sourceTerrain === "ruins" && sourceClass === "Marksman") effectiveDmg += 10;
+      if (targetTerrain === "forest" && dist > 1 && sourceClass !== "Assassin") effectiveDmg = Math.max(1, effectiveDmg - 10);
+      if (targetTerrain === "ruins" && targetClass === "Tank") effectiveDmg = Math.max(1, effectiveDmg - 10);
     }
     if (target.kind === "unit" && (target.guardTurns || 0) > 0) {
-      const gv = (target.guardValue != null && target.guardValue !== 0) ? target.guardValue : 1;
+      const gv = (target.guardValue != null && target.guardValue !== 0) ? target.guardValue : 10;
       if (gv > 0 && gv < 1) {
         effectiveDmg = Math.max(1, Math.ceil(effectiveDmg * (1 - gv)));
       } else {
@@ -2215,6 +2383,13 @@ class Game {
         const victim = `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.type}`;
         this.logEvent({ type: "death", killer, victim });
         if (source && source.kind === "unit") this.awardExp(source, 4, target);
+        const bountyReward = (window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[target.type] && window.Entities.unitDefs[target.type].bountyEnergyReward) || target.bountyEnergyReward || 0;
+        if (bountyReward > 0) {
+          const rewardTeam = target.team === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER;
+          this.energy[rewardTeam] = Math.min(Config.ENERGY_MAX_TOTAL || 99, (this.energy[rewardTeam] || 0) + bountyReward);
+          this.logEvent({ type: "status", msg: `${rewardTeam === Config.TEAM.PLAYER ? "Player" : "AI"} gained ${bountyReward} gold from the bounty.` });
+          this.updateHUD();
+        }
         this.teamDeaths = this.teamDeaths || { [Config.TEAM.PLAYER]: 0, [Config.TEAM.AI]: 0 };
         this.teamDeaths[target.team] = (this.teamDeaths[target.team] || 0) + 1;
         this.entities = this.entities.filter(e => e !== target);
@@ -2228,10 +2403,15 @@ class Game {
 
   attack(attacker, target) {
     if (!attacker || !target) return;
+    if ((attacker.silencedTurns || 0) > 0) return;
     // Prevent cross-realm attacks
     if (attacker.kind === "unit" && target && ((!!attacker.inShadowRealm) !== (!!target.inShadowRealm))) return;
     this.animateAttack(attacker, target);
-    this.applyDamage(target, attacker.dmg, attacker);
+    let damage = attacker.dmg;
+    if (attacker.type === "Slicer" && target.kind === "unit") {
+      damage = Math.max(1, Math.ceil((target.hp || 0) * 0.3));
+    }
+    this.applyDamage(target, damage, attacker);
   }
 
   heal(mage, ally) {
@@ -2331,7 +2511,8 @@ class Game {
       if (window.RuneDefs && this.energy[Config.TEAM.AI] >= 2) {
         const pick = this.chooseBestAIRunePurchase();
         if (pick && this.buyRune(pick.unit, pick.rune.id)) {
-          this.logEvent({ type: "status", msg: `AI bought ${pick.rune.name} for ${pick.unit.type}` });
+          const firstStage = this.getRuneStage(pick.rune, 1);
+          this.logEvent({ type: "status", msg: `AI bought ${(firstStage && firstStage.name) || pick.rune.baseName || "a rune"} for ${pick.unit.type}` });
         }
       }
     }
@@ -2519,6 +2700,28 @@ class Game {
             }
           }
         }
+        if (["Slicer", "Bounty Hunter", "Silencer"].includes(u.type)) {
+          const def = this.getAbilityDefForUnit(u);
+          if (def && this.canActivateAbility(u, def)) {
+            const targets = def.computeTargets(this, u);
+            const scored = targets.map(([r, c]) => {
+              const target = this.occupants[r][c];
+              if (!target || target.team === u.team) return { r, c, score: 0, target: null };
+              let score = target.hp || 1;
+              if (u.type === "Slicer") score += target.maxHp || 0;
+              if (u.type === "Silencer") score += (target.ap || 0) * 3 + (target.dmg || 0);
+              if (u.type === "Bounty Hunter") score += target.hp <= 2 ? 6 : 0;
+              return { r, c, score, target };
+            }).sort((a, b) => b.score - a.score);
+            if (scored.length > 0 && scored[0].score > 0) {
+              def.perform(this, u, scored[0].r, scored[0].c);
+              this.animateAbilityCast(u, def, scored[0].r, scored[0].c);
+              this.logEvent({ type: "ability", caster: `AI ${u.type}`, ability: def.name, target: scored[0].target ? scored[0].target.type : "Unknown" });
+              await this.delay(320);
+              continue;
+            }
+          }
+        }
         if (u.ap >= 1) {
           if (u.type === "Alchemist" && ((u.abilityCooldowns["Catalyze"] || 0) === 0)) {
             const def = (window.Abilities && window.Abilities.Alchemist && window.Abilities.Alchemist[0]);
@@ -2600,7 +2803,7 @@ class Game {
                 if (this.isTerrainBlockingForUnit(terr, occ)) continue;
                 const before = Math.max(Math.abs(r - u.row), Math.abs(c - u.col));
                 const after  = Math.max(Math.abs(stepR - u.row), Math.abs(stepC - u.col));
-                const gain = before - after;
+                const gain = (before - after) + (occ.hp <= 2 ? 2 : 0);
                 if (gain > bestGain) { bestGain = gain; best = [r, c]; }
               }
               if (best) {
@@ -3024,10 +3227,10 @@ Game.prototype.applyHazardsForTeam = function(team) {
     if (e && e.kind === "unit" && e.team === team) {
       const h = this.hazards[e.row][e.col];
       if (h && h.kind === "fire" && this.terrain[e.row][e.col] !== "water") {
-        this.applyDamage(e, 2, null);
+        this.applyDamage(e, 20, null);
       }
       if (e && (e.burnTurns || 0) > 0) {
-        this.applyDamage(e, 1, null);
+        this.applyDamage(e, 10, null);
         e.burnTurns = Math.max(0, (e.burnTurns || 0) - 1);
       }
     }
@@ -3259,6 +3462,13 @@ Game.prototype.animateAbilityCast = function(unit, def, r, c) {
   if (name === "Pull") {
     this.spawnBeamFx(source, target, "fx-magnet", 380);
     this.spawnBurstFx(target.row, target.col, "fx-impact", 420);
+    const dest = {
+      row: target.row + Math.sign(unit.row - target.row),
+      col: target.col + Math.sign(unit.col - target.col)
+    };
+    if (this.inBounds(dest.row, dest.col)) {
+      this.spawnBeamFx(target, dest, "fx-magnet", 260);
+    }
     return;
   }
   if (name === "Raise Dead") {
@@ -3433,6 +3643,19 @@ Game.prototype.generateEnergy = function(team) {
   this.updateHUD();
 };
 
+Game.prototype.getUpcomingGoldGain = function(team) {
+  if (!team) return 0;
+  const produced = this.energyGenerated[team] || 0;
+  const max = Config.ENERGY_MAX_TOTAL || 99;
+  if (produced >= max) return 0;
+  if (this.energyDelayOne && this.energyDelayOne[team]) return 0;
+  const step = this.energyGainStep[team] || 0;
+  if (step === 0) return 3;
+  if (step === 1) return 4;
+  if (step === 2) return 5;
+  return 6;
+};
+
 Game.prototype.applyNexusEffects = function(team) {
   let owned = 0;
   for (let r = 0; r < Config.ROWS; r++) {
@@ -3534,8 +3757,11 @@ Game.prototype.buyRune = function(unit, runeId) {
   if (unit.runes.some(r => r.id === runeId)) return false;
 
   this.spendEnergy(unit.team, rune.cost);
-  unit.runes.push(rune);
-  rune.apply(unit);
+  const entry = this.createOwnedRune(rune);
+  if (!entry) return false;
+  unit.runes.push(entry);
+  const firstStage = this.getRuneStage(rune, 1);
+  if (firstStage && typeof firstStage.apply === "function") firstStage.apply(unit);
   this.playSfx && this.playSfx("heal");
   this.updateUnitPanel(unit);
   this.updateHUD();
@@ -3592,6 +3818,7 @@ Game.prototype.startDraft = function(mode, options) {
   const firstTeam = opts.firstTeam || Config.TEAM.PLAYER;
   const secondTeam = firstTeam === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER;
   this.draftedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
+  this.aiDraftNotes = { summary: "", entries: [] };
   this.draft = {
     active: true,
     completed: false,
@@ -3697,7 +3924,7 @@ Game.prototype.getDraftAverageCostLabel = function(team) {
   const defs = window.Entities.unitDefs || {};
   const biomeDefs = window.Entities.biomeDefs || {};
   const picks = Array.from(this.draftedUnits[team] || []);
-  if (!picks.length) return "Avg Cost: --";
+  if (!picks.length) return "Avg Cost: 🪙 --";
   const totalCost = picks.reduce((sum, type) => {
     const def = defs[type] || biomeDefs[type] || {};
     return sum + Number(def.cost || 0);
@@ -3706,7 +3933,427 @@ Game.prototype.getDraftAverageCostLabel = function(team) {
   const formattedCost = Number.isInteger(averageCost)
     ? String(averageCost)
     : averageCost.toFixed(1).replace(/\.0$/, "");
-  return `Avg Cost: ${formattedCost}`;
+  return `Avg Cost: 🪙 ${formattedCost}`;
+};
+
+Game.prototype.getDraftClassCounts = function(team) {
+  const defs = window.Entities.unitDefs || {};
+  const counts = {};
+  for (const type of Array.from(this.draftedUnits[team] || [])) {
+    if (!defs[type]) continue;
+    const cls = this.getUnitClass(type);
+    counts[cls] = (counts[cls] || 0) + 1;
+  }
+  return counts;
+};
+
+Game.prototype.describeCounterTarget = function(type) {
+  const cls = this.getUnitClass(type);
+  if (cls === "Marksman") return "pressure your backline before range snowballs";
+  if (cls === "Tank") return "keep stronger control and sustained damage online";
+  if (cls === "Support") return "force sharper trades before healing matters";
+  if (cls === "Assassin") return "protect softer picks and anchor the lane";
+  if (cls === "Control") return "spread threats so one disable matters less";
+  if (cls === "Fighter") return "match tempo and punish direct brawls";
+  return "keep a flexible board";
+};
+
+Game.prototype.getAIDraftStrategySummary = function() {
+  const counts = this.getDraftClassCounts(Config.TEAM.AI);
+  const parts = [];
+  if ((counts.Tank || 0) > 0) parts.push("frontline");
+  if ((counts.Marksman || 0) > 0) parts.push("range");
+  if ((counts.Artillery || 0) > 0) parts.push("siege range");
+  if ((counts.Support || 0) > 0) parts.push("sustain");
+  if ((counts.Control || 0) > 0) parts.push("control");
+  if ((counts.Assassin || 0) > 0) parts.push("pick pressure");
+  if ((counts.Fighter || 0) > 0) parts.push("tempo");
+  if (!parts.length) return "Still feeling out the draft.";
+  const core = parts.slice(0, 3).join(", ");
+  // Detect if we're committing to a class (>=2 pieces)
+  let committedClass = null;
+  let maxCount = 0;
+  for (const [k, v] of Object.entries(counts)) {
+    if (v > maxCount) {
+      maxCount = v;
+      committedClass = k;
+    }
+  }
+  if (maxCount >= 2) {
+    return `Committed: ${committedClass}-leaning. Current plan: ${core}.`;
+  }
+  return `Current plan: ${core}.`;
+};
+
+Game.prototype.pushAIDraftNote = function(kind, text) {
+  if (this.draft.mode !== "ai" || !text) return;
+  this.aiDraftNotes.summary = this.getAIDraftStrategySummary();
+  this.aiDraftNotes.entries.unshift({ kind, text });
+  this.aiDraftNotes.entries = this.aiDraftNotes.entries.slice(0, 6);
+};
+
+Game.prototype.getAIDraftScoredCandidates = function() {
+  const defs = window.Entities.unitDefs || {};
+  const biomeDefs = window.Entities.biomeDefs || {};
+  const picked = new Set([...this.draftedUnits[Config.TEAM.PLAYER], ...this.draftedUnits[Config.TEAM.AI]]);
+  const ownPicks = Array.from(this.draftedUnits[Config.TEAM.AI]);
+  const ownUnitPicks = ownPicks.filter(type => defs[type]);
+  const ownClasses = ownPicks.filter(type => defs[type]).map(type => this.getUnitClass(type));
+  const ownCosts = ownUnitPicks.map(type => Number((defs[type] && defs[type].cost) || 0)).filter(n => n > 0);
+  const ownLowCostCount = ownCosts.filter(c => c <= 2).length;
+  const ownEarlyCurveCount = ownCosts.filter(c => c <= 3).length;
+  const ownBiomeCount = ownPicks.filter(type => biomeDefs[type]).length;
+  const wantedClasses = ["Tank", "Assassin", "Breaker", "Marksman", "Artillery", "Support", "Disruptor", "Control", "Fighter"];
+  const available = this.getDraftableItems().filter(type => !picked.has(type));
+  if (!available.length) return [];
+  const playerClassCounts = this.getDraftClassCounts(Config.TEAM.PLAYER) || {};
+  const classCounters = {
+    Marksman: ["Assassin", "Stalker", "Disruptor"],
+    Tank: ["Breaker", "Control", "Marksman"],
+    Support: ["Disruptor", "Assassin", "Paladin"],
+    Assassin: ["Sentinel", "Paladin", "Marksman"],
+    Control: ["Marksman", "Assassin", "Disruptor"],
+    Fighter: ["Marksman", "Control", "Breaker"],
+    Breaker: ["Marksman", "Control", "Disruptor"],
+    Disruptor: ["Assassin", "Marksman", "Breaker"]
+  };
+  const scored = available.map(type => {
+    const isBiome = !!biomeDefs[type];
+    const def = defs[type] || biomeDefs[type];
+    const cls = isBiome ? "Biome" : this.getUnitClass(type);
+    const cost = Number(def.cost || 0);
+    let score = cost * 0.35;
+
+    if (isBiome) {
+      score += ownBiomeCount < 2 ? 4 : -5;
+      if (ownPicks.length < 5) score -= 4;
+      if (type === "Forge" && ownClasses.includes("Tank")) score += 3;
+      if (type === "Watchtower" && ownClasses.includes("Marksman")) score += 3;
+      if (type === "Sanctum" && ownClasses.includes("Support")) score += 3;
+      if (type === "Boxing Arena" && ownClasses.includes("Fighter")) score += 3;
+    } else {
+      // Prefer filling missing wanted classes
+      if (wantedClasses.includes(cls) && !ownClasses.includes(cls)) score += 4;
+
+      // Add small situational bonuses based on player picks (counters)
+      for (const [pcls, cnt] of Object.entries(playerClassCounts || {})) {
+        if (!cnt) continue;
+        if (classCounters[pcls] && classCounters[pcls].includes(cls)) {
+          score += 3 * cnt; // scale with how many of that class the player has
+        }
+        // Discourage direct mirroring of the player's dominant class
+        if (pcls === cls) score -= 1.5 * cnt;
+      }
+
+      // Minor context-sensitive boosts
+      if (this.draftedUnits[Config.TEAM.PLAYER].has("Warrior") && cls === "Marksman") score += 1.5;
+      if (this.draftedUnits[Config.TEAM.PLAYER].has("Archer") && cls === "Assassin") score += 1.5;
+
+      // Tight curve so AI can play turn 1 and turn 2.
+      if (ownPicks.length < 3) {
+        if (cost <= 2) score += 7;
+        else if (cost <= 3) score += 3;
+        else if (cost >= 5) score -= 5;
+      }
+      if (ownPicks.length < 5 && ownLowCostCount < 1 && cost <= 2) score += 8;
+      if (ownPicks.length < 6 && ownEarlyCurveCount < 2 && cost <= 3) score += 5;
+
+      // Avoid over-committing one class too early.
+      const sameClassCount = ownClasses.filter(c => c === cls).length;
+      if (sameClassCount >= 2 && ownPicks.length < 6) score -= 4;
+
+      // Explicit synergy structure.
+      if (ownClasses.includes("Tank") && (cls === "Marksman" || cls === "Artillery")) score += 2.5;
+      if (ownClasses.includes("Control") && (cls === "Marksman" || cls === "Assassin" || cls === "Artillery")) score += 2;
+      if (ownClasses.includes("Support") && (cls === "Tank" || cls === "Fighter" || cls === "Breaker")) score += 1.5;
+      if (ownClasses.includes("Artillery") && cls === "Tank") score += 2;
+
+      // Avoid too many expensive-only picks.
+      if (cost >= 5 && ownCosts.filter(c => c >= 5).length >= 2 && ownPicks.length < 6) score -= 6;
+    }
+    return { type, score, cost };
+  }).sort((a, b) => b.score - a.score);
+  return scored;
+};
+
+Game.prototype.getAIDraftCurrentThought = function() {
+  if (this.draft.mode !== "ai") return "";
+  // Prefer the most-recent AI note if present (this captures the rationale after a pick)
+  if (this.aiDraftNotes && Array.isArray(this.aiDraftNotes.entries) && this.aiDraftNotes.entries.length) {
+    const topEntry = this.aiDraftNotes.entries[0];
+    if (topEntry && topEntry.text) return topEntry.text;
+  }
+  const scored = this.getAIDraftScoredCandidates();
+  if (!scored || !scored.length) return "No good options remain.";
+  const top = scored[0];
+  const alternates = scored.slice(1, 4).map(s => s.type);
+  const commentary = this.getAIDraftPickCommentary(top.type) || "This is attractive for multiple reasons.";
+  let thought = `Considering ${top.type}: ${commentary}`;
+  if (alternates.length) thought += ` Alternatives: ${alternates.join(", ")}.`;
+  return thought;
+};
+
+Game.prototype.pickDraftPhrase = function(options, seed) {
+  if (!options || !options.length) return "";
+  const text = String(seed || "");
+  let hash = (this.draft && this.draft.currentIndex) || 0;
+  for (let i = 0; i < text.length; i++) hash += text.charCodeAt(i) * (i + 1);
+  return options[Math.abs(hash) % options.length];
+};
+
+Game.prototype.joinDraftList = function(items) {
+  const clean = (items || []).filter(Boolean);
+  if (clean.length <= 1) return clean[0] || "";
+  if (clean.length === 2) return `${clean[0]} and ${clean[1]}`;
+  return `${clean.slice(0, -1).join(", ")}, and ${clean[clean.length - 1]}`;
+};
+
+Game.prototype.getAIDraftCounterMap = function() {
+  return {
+    Marksman: ["Assassin", "Fighter", "Disruptor"],
+    Tank: ["Breaker", "Control", "Marksman"],
+    Support: ["Disruptor", "Assassin", "Marksman"],
+    Assassin: ["Tank", "Marksman", "Support"],
+    Control: ["Marksman", "Assassin", "Disruptor"],
+    Fighter: ["Marksman", "Control", "Breaker"],
+    Breaker: ["Marksman", "Control", "Disruptor"],
+    Disruptor: ["Assassin", "Marksman", "Breaker"],
+    Artillery: ["Assassin", "Disruptor", "Marksman"]
+  };
+};
+
+Game.prototype.getAIDraftRolePhrase = function(type) {
+  const biomeDefs = window.Entities.biomeDefs || {};
+  if (biomeDefs[type]) {
+    const biomeRoles = {
+      Watchtower: "stretch the fight into safer firing lanes",
+      Forge: "make frontliners harder to dislodge",
+      Sanctum: "turn close trades into longer sustain fights",
+      "Boxing Arena": "reward early brawling and tight-space pressure"
+    };
+    return biomeRoles[type] || "change which units scale best on this map";
+  }
+  const cls = this.getUnitClass(type);
+  const roles = {
+    Tank: "give the draft a real anchor",
+    Marksman: "create ranged pressure that punishes slow setups",
+    Support: "make longer fights safer for the pieces I already have",
+    Assassin: "threaten the backline instead of letting it free-fire",
+    Control: "break up your clean turns and force awkward trades",
+    Fighter: "contest space early and keep tempo from slipping away",
+    Breaker: "open a way through bulky targets",
+    Disruptor: "cut into synergy before it gets comfortable",
+    Artillery: "apply long-range pressure while ignoring wall lines"
+  };
+  return roles[cls] || "keep the draft flexible";
+};
+
+Game.prototype.getAIDraftCounterTargetsForPick = function(type) {
+  const defs = window.Entities.unitDefs || {};
+  if (!defs[type]) return [];
+  const cls = this.getUnitClass(type);
+  const counters = this.getAIDraftCounterMap();
+  const playerCounts = this.getDraftClassCounts(Config.TEAM.PLAYER) || {};
+  return Object.entries(playerCounts)
+    .filter(([pcls, count]) => count > 0 && (counters[pcls] || []).includes(cls))
+    .map(([pcls, count]) => count > 1 ? `${pcls} stack` : pcls);
+};
+
+Game.prototype.getAIDraftSynergiesForPick = function(type) {
+  const cls = this.getUnitClass(type);
+  const ownPicks = Array.from(this.draftedUnits[Config.TEAM.AI] || []);
+  const synergies = [];
+  if (ownPicks.includes("Watchtower") && cls === "Marksman") synergies.push("Watchtower lanes");
+  if (ownPicks.includes("Forge") && (cls === "Tank" || cls === "Breaker")) synergies.push("Forge durability");
+  if (ownPicks.includes("Sanctum") && cls === "Support") synergies.push("Sanctum sustain");
+  if (ownPicks.includes("Boxing Arena") && cls === "Fighter") synergies.push("Boxing Arena tempo");
+  if (ownPicks.some(p => this.getUnitClass(p) === "Tank") && cls === "Marksman") synergies.push("frontline cover");
+  if (ownPicks.some(p => this.getUnitClass(p) === "Control") && (cls === "Marksman" || cls === "Assassin")) synergies.push("control setup");
+  if (ownPicks.some(p => this.getUnitClass(p) === "Support") && (cls === "Tank" || cls === "Fighter")) synergies.push("sustain backing");
+  return Array.from(new Set(synergies)).slice(0, 2);
+};
+
+Game.prototype.getAIDraftPlanDevelopment = function(type) {
+  const biomeDefs = window.Entities.biomeDefs || {};
+  if (biomeDefs[type]) {
+    return this.pickDraftPhrase([
+      `That nudges the whole plan toward ${this.getAIDraftRolePhrase(type)}.`,
+      `The map is now part of the win condition, not just scenery.`,
+      `I can draft around that board texture from here.`
+    ], type);
+  }
+
+  const cls = this.getUnitClass(type);
+  const counts = this.getDraftClassCounts(Config.TEAM.AI) || {};
+  const count = counts[cls] || 0;
+  if (count <= 1) {
+    return this.pickDraftPhrase([
+      `This opens a ${cls} line I did not have before.`,
+      `I am adding ${cls} tools without locking the whole draft yet.`,
+      `This broadens the plan so I am not relying on one angle.`
+    ], `${type}-first`);
+  }
+  if (count === 2) {
+    return this.pickDraftPhrase([
+      `Now the ${cls} plan is real enough to build around.`,
+      `This turns ${cls} from a splash into a clear lane.`,
+      `I am starting to commit: future picks can support this ${cls} core.`
+    ], `${type}-second`);
+  }
+  return this.pickDraftPhrase([
+    `At this point I am leaning hard into ${cls} and forcing you to answer it.`,
+    `This is a commitment pick: the rest of my draft should protect this ${cls} identity.`,
+    `I am doubling down because the board is giving this ${cls} plan room.`
+  ], `${type}-stack`);
+};
+
+Game.prototype.getAIDraftPickRationale = function(type) {
+  const biomeDefs = window.Entities.biomeDefs || {};
+  const isBiome = !!biomeDefs[type];
+  const scored = this.getAIDraftScoredCandidates() || [];
+  const counters = isBiome ? [] : this.getAIDraftCounterTargetsForPick(type);
+  const synergies = isBiome ? [] : this.getAIDraftSynergiesForPick(type);
+  const alternatives = scored.filter(s => s.type !== type).slice(0, 2).map(s => s.type);
+  const role = this.getAIDraftRolePhrase(type);
+  const plan = this.getAIDraftPlanDevelopment(type);
+  const opener = this.pickDraftPhrase([
+    `I am taking ${type} to ${role}.`,
+    `${type} fits here because it helps me ${role}.`,
+    `The ${type} pick is about one thing first: ${role}.`
+  ], `${type}-opener`);
+  const details = [];
+
+  if (counters.length) {
+    const targets = this.joinDraftList(counters);
+    details.push(this.pickDraftPhrase([
+      `It also gives me a cleaner answer into your ${targets}.`,
+      `That matters because your ${targets} was starting to shape the draft.`,
+      `I am not letting your ${targets} become the only story on the board.`
+    ], `${type}-counter-${targets}`));
+  }
+
+  if (synergies.length) {
+    const synergyText = this.joinDraftList(synergies);
+    details.push(this.pickDraftPhrase([
+      `It links up with my ${synergyText}, so the pieces are starting to talk to each other.`,
+      `The nice part is the overlap with ${synergyText}; that makes the plan less scattered.`,
+      `This is not isolated value either: ${synergyText} makes it easier to use.`
+    ], `${type}-synergy-${synergyText}`));
+  }
+
+  if (!details.length && alternatives.length) {
+    details.push(this.pickDraftPhrase([
+      `I looked at ${this.joinDraftList(alternatives)}, but this keeps the plan cleaner.`,
+      `${this.joinDraftList(alternatives)} were live options; this one gives me the clearer next step.`,
+      `Rather than chase ${this.joinDraftList(alternatives)}, I am tightening the shape of my board.`
+    ], `${type}-alts-${alternatives.join("-")}`));
+  }
+
+  if (!details.length) details.push(this.getAIDraftPickCommentary(type));
+  return `${opener} ${details[0]} ${plan}`;
+};
+
+Game.prototype.getAIReactionRationaleForPlayerPick = function(type) {
+  const biomeDefs = window.Entities.biomeDefs || {};
+  const isBiome = !!biomeDefs[type];
+  const cls = isBiome ? "Biome" : this.getUnitClass(type);
+  const base = this.getAIReactionToPlayerPick(type) || "";
+  const scored = this.getAIDraftScoredCandidates() || [];
+  const responses = scored.slice(0, 2).map(s => s.type);
+  const responseText = responses.length
+    ? this.pickDraftPhrase([
+      `My next looks are ${this.joinDraftList(responses)} if they stay open.`,
+      `That pushes ${this.joinDraftList(responses)} higher on my board.`,
+      `I am now checking whether ${this.joinDraftList(responses)} gives the cleanest reply.`
+    ], `${type}-response-${responses.join("-")}`)
+    : "I will keep the next pick flexible because the board is almost empty.";
+  const opener = isBiome
+    ? `You picked ${type}, so the map is becoming part of your plan.`
+    : `You picked ${type}, which reads as a ${cls} signal.`;
+  return `${opener} ${base} ${responseText}`;
+};
+
+Game.prototype.getAIDraftPickCommentary = function(type) {
+  const defs = window.Entities.unitDefs || {};
+  const biomeDefs = window.Entities.biomeDefs || {};
+  const isBiome = !!biomeDefs[type];
+  if (isBiome) {
+    if (type === "Watchtower") return "I can turn range into a safer win condition from there.";
+    if (type === "Forge") return "That makes durable units more annoying to remove.";
+    if (type === "Sanctum") return "That rewards me for dragging fights out instead of coin-flipping bursts.";
+    if (type === "Boxing Arena") return "That gives brawlers a reason to meet in the middle.";
+    return "That changes which pieces are worth building around.";
+  }
+  const def = defs[type] || {};
+  const range = def.range || 0;
+  const cls = this.getUnitClass(type);
+  if (cls === "Marksman" && range >= 3) return "I want safe damage that makes you cross the board under pressure.";
+  if (cls === "Marksman") return "I want ranged pressure before the frontlines fully settle.";
+  if (cls === "Tank") return "I need something that can stand in the way while the rest of the plan develops.";
+  if (cls === "Support") return "I am buying time and making my trades compound.";
+  if (cls === "Assassin") return "I want your fragile pieces to feel unsafe every turn.";
+  if (cls === "Control") return "I am adding disruption so your best unit does not always get a clean turn.";
+  if (cls === "Fighter") return "I am keeping the early board honest with a piece that can actually take space.";
+  if (cls === "Breaker") return "I am preparing for armor, bulk, or anything trying to wall me out.";
+  if (cls === "Disruptor") return "I am looking for ways to make your synergies misfire.";
+  if (cls === "Artillery") return "I want long-range pressure that can fire over walls.";
+  return "I am preserving flexibility until the draft shows a sharper weakness.";
+};
+
+Game.prototype.getAIReactionToPlayerPick = function(type) {
+  const defs = window.Entities.unitDefs || {};
+  const biomeDefs = window.Entities.biomeDefs || {};
+  const isBiome = !!biomeDefs[type];
+  if (isBiome) {
+    if (type === "Watchtower") return "I should not let you stack range for free.";
+    if (type === "Forge") return "I need damage or control that still matters into tougher frontlines.";
+    if (type === "Sanctum") return "I should avoid slow trades unless I can outscale the healing.";
+    if (type === "Boxing Arena") return "I need to respect early brawls and keep my spacing clean.";
+    return "I need to re-price the units that benefit most from this terrain.";
+  }
+  const cls = this.getUnitClass(type);
+  if (cls === "Marksman") return "I need either dive pressure or range of my own so that backline cannot fire for free.";
+  if (cls === "Tank") return "I will look for ways around the wall instead of simply punching into it.";
+  if (cls === "Support") return "I should shorten fights or disrupt the pieces that make healing valuable.";
+  if (cls === "Assassin") return "I have to protect my backline and avoid drafting only fragile threats.";
+  if (cls === "Control") return "I should avoid a plan that depends on one perfect activation.";
+  if (cls === "Fighter") return "I need to contest tempo before you own the middle.";
+  if (cls === "Breaker") return "I cannot rely on bulk alone if you are already drafting answers to it.";
+  if (cls === "Disruptor") return "I should keep my synergies useful even when one piece gets shut down.";
+  if (cls === "Artillery") return "I should not rely on walls for safety against your backline pressure.";
+  return `I am adapting toward ${this.describeCounterTarget(type)}.`;
+};
+
+Game.prototype.renderAIDraftNotesHTML = function() {
+  if (this.draft.mode !== "ai") return "";
+  const summary = this.getAIDraftStrategySummary() || "Still mapping the board and waiting for real signals.";
+  const thought = this.getAIDraftCurrentThought() || "No immediate plan yet.";
+  return `
+    <div class="draft-ai-panel">
+      <div class="draft-card-title">AI Scout Notes</div>
+      <div class="draft-ai-summary">${summary}</div>
+      <div class="draft-ai-notes"><div class="draft-note current">${thought}</div></div>
+    </div>
+  `;
+};
+
+Game.prototype.getDraftedAffordableTypeForAI = function(maxCost) {
+  const defs = window.Entities.unitDefs || {};
+  const cap = Number(maxCost || 2);
+  const team = Config.TEAM.AI;
+  const drafted = Array.from(this.draftedUnits[team] || []).filter(t => defs[t]);
+  const affordable = drafted.filter(t => (defs[t].cost || 0) <= cap);
+  if (!affordable.length) return null;
+  const sorted = affordable.sort((a, b) => {
+    const da = defs[a] || {};
+    const db = defs[b] || {};
+    const ca = this.getUnitClass(a);
+    const cb = this.getUnitClass(b);
+    const sa = (da.hp || 0) + (ca === "Tank" ? 20 : 0) + (ca === "Fighter" ? 8 : 0);
+    const sb = (db.hp || 0) + (cb === "Tank" ? 20 : 0) + (cb === "Fighter" ? 8 : 0);
+    return sb - sa;
+  });
+  return sorted[0] || null;
 };
 
 Game.prototype.renderDraftOverlay = function() {
@@ -3720,7 +4367,7 @@ Game.prototype.renderDraftOverlay = function() {
   const picked = new Set([...this.draftedUnits[Config.TEAM.PLAYER], ...this.draftedUnits[Config.TEAM.AI]]);
   const items = this.getDraftableItems().filter(type => !picked.has(type));
   const sortMode = this.draftFilters.sort === "class" ? "class" : "cost";
-  const classOrder = ["Fighter", "Marksman", "Assassin", "Support", "Tank", "Control", "Biomes", "Other"];
+  const classOrder = ["Fighter", "Marksman", "Artillery", "Assassin", "Breaker", "Disruptor", "Support", "Tank", "Control", "Biomes", "Other"];
   const getItemClass = (type) => biomeDefs[type] ? "Biomes" : this.getUnitClass(type);
   const getItemCost = (type) => biomeDefs[type] ? biomeDefs[type].cost : (defs[type].cost || 0);
   const groupValues = sortMode === "class"
@@ -3783,7 +4430,7 @@ Game.prototype.renderDraftOverlay = function() {
               if (!grouped.length) return "";
               return `
                 <div class="buy-group draft-buy-group">
-                  <button type="button" class="group-header btn">${sortMode === "class" ? groupValue : `Cost ${groupValue}`}</button>
+                  <button type="button" class="group-header btn">${sortMode === "class" ? groupValue : `Cost \uD83E\uDE99 ${groupValue}`}</button>
                   <div class="group-list draft-group-list" style="display:${selectedFilter !== "all" ? "grid" : "none"}">
                     ${grouped.map(type => {
                       const def = defs[type] || biomeDefs[type];
@@ -3795,7 +4442,7 @@ Game.prototype.renderDraftOverlay = function() {
                             <b>${type}</b>
                             <small>${isBiome ? "Biome - " + (def.shopLabel || "Board Effect") : this.getUnitClass(type) + " - " + this.getShopRoleSummary(type)}</small>
                           </span>
-                          <span class="draft-unit-cost">${def.cost || 0}</span>
+                          <span class="draft-unit-cost">\uD83E\uDE99 ${def.cost || 0}</span>
                         </button>
                       `;
                     }).join("")}
@@ -3804,6 +4451,7 @@ Game.prototype.renderDraftOverlay = function() {
               `;
             }).join("")}
           </div>
+          ${this.renderAIDraftNotesHTML()}
         </div>
       </div>
     </div>
@@ -3843,6 +4491,15 @@ Game.prototype.makeDraftPick = function(type, options) {
   this.draftedUnits[team].add(type);
   this.draft.currentIndex += 1;
   this.logEvent({ type: "status", msg: `${this.getDraftTeamLabel(team)} drafted ${type}` });
+  if (this.draft.mode === "ai") {
+    if (team === Config.TEAM.AI) {
+      const rationale = this.getAIDraftPickRationale(type);
+      this.pushAIDraftNote("pick", rationale);
+    } else {
+      const rationale = this.getAIReactionRationaleForPlayerPick(type);
+      this.pushAIDraftNote("counter", rationale);
+    }
+  }
 
   if (this.isMultiplayer && !opts.remote && window.Multiplayer) {
     window.Multiplayer.sendPacket("DRAFT_PICK", { team, type });
@@ -3869,40 +4526,35 @@ Game.prototype.maybeRunAIDraftPick = function() {
   window.setTimeout(() => {
     if (!this.draft.active || this.draft.sequence[this.draft.currentIndex] !== Config.TEAM.AI) return;
     const pick = this.chooseAIDraftPick();
-    if (pick) this.makeDraftPick(pick, { team: Config.TEAM.AI });
+    if (pick && pick.type) this.makeDraftPick(pick.type, { team: Config.TEAM.AI });
   }, 320);
 };
 
 Game.prototype.chooseAIDraftPick = function() {
+  // Use the centralized scorer with strict early curve guardrails.
+  const scored = this.getAIDraftScoredCandidates();
+  if (!scored || !scored.length) return null;
+
   const defs = window.Entities.unitDefs || {};
-  const biomeDefs = window.Entities.biomeDefs || {};
-  const picked = new Set([...this.draftedUnits[Config.TEAM.PLAYER], ...this.draftedUnits[Config.TEAM.AI]]);
-  const ownPicks = Array.from(this.draftedUnits[Config.TEAM.AI]);
-  const ownClasses = ownPicks.filter(type => defs[type]).map(type => this.getUnitClass(type));
-  const ownBiomeCount = ownPicks.filter(type => biomeDefs[type]).length;
-  const wantedClasses = ["Tank", "Assassin", "Marksman", "Support", "Control", "Fighter"];
-  const available = this.getDraftableItems().filter(type => !picked.has(type));
-  if (!available.length) return null;
-  const scored = available.map(type => {
-    const isBiome = !!biomeDefs[type];
-    const def = defs[type] || biomeDefs[type];
-    const cls = isBiome ? "Biome" : this.getUnitClass(type);
-    let score = (def.cost || 0) * 0.35;
-    if (isBiome) {
-      score += ownBiomeCount < 2 ? 4 : -5;
-      if (type === "Forge" && ownClasses.includes("Tank")) score += 3;
-      if (type === "Watchtower" && ownClasses.includes("Marksman")) score += 3;
-      if (type === "Sanctum" && ownClasses.includes("Support")) score += 3;
-      if (type === "Boxing Arena" && ownClasses.includes("Fighter")) score += 3;
-    } else {
-      if (wantedClasses.includes(cls) && !ownClasses.includes(cls)) score += 5;
-      if (["Sentinel", "Bulwark", "Paladin", "Stalker", "Archer", "Ballista", "Cleric", "Firecaller", "Sludge"].includes(type)) score += 2;
-      if (this.draftedUnits[Config.TEAM.PLAYER].has("Warrior") && cls === "Marksman") score += 2;
-      if (this.draftedUnits[Config.TEAM.PLAYER].has("Archer") && cls === "Assassin") score += 2;
-    }
-    return { type, score };
-  }).sort((a, b) => b.score - a.score);
-  return scored[0].type;
+  const ownPicks = Array.from(this.draftedUnits[Config.TEAM.AI] || []).filter(t => defs[t]);
+  const ownCosts = ownPicks.map(t => Number(defs[t].cost || 0));
+  const lowCostCount = ownCosts.filter(c => c <= 2).length;
+  const earlyCount = ownCosts.filter(c => c <= 3).length;
+
+  if (ownPicks.length < 3 && lowCostCount < 1) {
+    const cheap = scored.filter(s => (s.cost || 0) <= 2);
+    if (cheap.length) return cheap[0];
+  }
+  if (ownPicks.length < 5 && earlyCount < 2) {
+    const curve = scored.filter(s => (s.cost || 0) <= 3);
+    if (curve.length) return curve[0];
+  }
+
+  const top = scored[0].score;
+  const close = scored.filter(s => s.score >= (top - 1.75)).slice(0, 4);
+  if (close.length <= 1) return close[0] || scored[0];
+  const pick = close[Math.floor(Math.random() * close.length)];
+  return pick || close[0];
 };
 
 Game.prototype.completeDraft = function() {
@@ -3921,28 +4573,28 @@ Game.prototype.getAbilityDefForUnit = function(unit) {
 
 Game.prototype.scoreAIRune = function(unit, rune) {
   if (!unit || !rune) return -Infinity;
+  if (unit.runes.some(r => r.id === rune.id)) return -Infinity;
   let score = 0;
-  if (rune.id === "rune_hp") score += unit.maxHp <= 5 ? 7 : 4;
-  if (rune.id === "rune_dmg") score += unit.dmg >= 3 ? 8 : 5;
-  if (rune.id === "rune_move") score += unit.move <= 2 ? 8 : 4;
-  if (rune.id === "rune_range") score += unit.range >= 2 ? 8 : 3;
-  if (rune.id === "rune_ap") score += unit.apMax <= 2 ? 9 : 5;
-  if (rune.id === "rune_rampart") score += unit.maxHp <= 8 ? 9 : 4;
+  if (rune.id === "rune_vitality") score += unit.maxHp <= 6 ? 8 : 5;
+  if (rune.id === "rune_power") score += unit.dmg >= 3 ? 8 : 5;
+  if (rune.id === "rune_swiftness") score += unit.move <= 2 ? 8 : 4;
+  if (rune.id === "rune_scope") score += unit.range >= 2 ? 8 : 4;
+  if (rune.id === "rune_frenzy") score += unit.apMax <= 2 ? 9 : 5;
+  if (rune.id === "rune_rampage") score += unit.maxHp <= 8 ? 7 : 4;
   if (rune.id === "rune_deft") score += (unit.range >= 2 && unit.dmg <= 3) ? 9 : 4;
-  if (rune.id === "rune_focus") score += (window.Abilities && window.Abilities[unit.type] && window.Abilities[unit.type].length) ? 9 : 2;
+  if (rune.id === "rune_chrono") score += (window.Abilities && window.Abilities[unit.type] && window.Abilities[unit.type].length) ? 9 : 2;
   if (unit.type === "Cleric" || unit.type === "Mage" || unit.type === "Hex") {
-    if (rune.id === "rune_range") score += 4;
+    if (rune.id === "rune_scope") score += 4;
   }
   if (unit.type === "Warrior" || unit.type === "Berserker" || unit.type === "Rogue") {
-    if (rune.id === "rune_move" || rune.id === "rune_dmg") score += 4;
+    if (rune.id === "rune_swiftness" || rune.id === "rune_power") score += 4;
   }
-  if (unit.type === "Druid" && rune.id === "rune_hp") score += 5;
-  if (unit.type === "Sentinel" && rune.id === "rune_rampart") score += 7;
+  if (unit.type === "Druid" && rune.id === "rune_vitality") score += 5;
+  if (unit.type === "Sentinel" && rune.id === "rune_rampage") score += 4;
   if (unit.type === "Sentinel" && rune.id === "rune_deft") score += 2;
-  if (unit.type === "Ballista" && rune.id === "rune_range") score += 6;
-  if (unit.type === "Ballista" && rune.id === "rune_dmg") score += 4;
-  if (unit.type === "Watchtower" && rune.id === "rune_range") score += 5;
-  if (unit.type === "Paladin" && rune.id === "rune_rampart") score += 4;
+  if (unit.type === "Ballista" && rune.id === "rune_scope") score += 6;
+  if (unit.type === "Ballista" && rune.id === "rune_power") score += 4;
+  if (unit.type === "Paladin" && rune.id === "rune_vitality") score += 4;
   return score - (rune.cost * 0.35);
 };
 
@@ -4066,7 +4718,7 @@ Game.prototype.renderBuyControls = function() {
   const allUnits = Object.keys(defs).filter(t => !defs[t].hiddenFromShop && this.isUnitDrafted(myTeam, t));
   const allBiomes = Object.keys(biomeDefs).filter(t => this.isBiomeDrafted(myTeam, t));
   const sortMode = this.shopFilters.sort === "class" ? "class" : "cost";
-  const classOrder = ["Fighter", "Marksman", "Assassin", "Support", "Tank", "Control", "Biomes", "Other"];
+  const classOrder = ["Fighter", "Marksman", "Artillery", "Assassin", "Breaker", "Disruptor", "Support", "Tank", "Control", "Biomes", "Other"];
   
   const getUnitClass = (type) => {
     if (biomeDefs[type]) return "Biomes";
@@ -4124,7 +4776,7 @@ Game.prototype.renderBuyControls = function() {
     const header = document.createElement("button");
     header.type = "button";
     header.className = "group-header btn";
-    header.textContent = sortMode === "class" ? groupValue : `Cost ${groupValue}`;
+    header.textContent = sortMode === "class" ? groupValue : `Cost \uD83E\uDE99 ${groupValue}`;
     const list = document.createElement("div");
     list.className = "group-list";
     list.style.display = (selectedFilter !== "all") ? "block" : "none";
@@ -4154,7 +4806,7 @@ Game.prototype.renderBuyControls = function() {
           // Allow selection even if low energy to see details
           this.buySelection = null; 
           this.biomeSelection = type;
-          this.logEvent({ type: "info", msg: `Selected ${type}. ${canAfford ? "Click anywhere to place it!" : "Not enough energy to place."}` });
+          this.logEvent({ type: "info", msg: `Selected ${type}. ${canAfford ? "Click anywhere to place it!" : "Not enough gold to place."}` });
           
           // Update unit panel for Biome
           this.updateUnitPanel({
@@ -4196,6 +4848,7 @@ Game.prototype.renderBuyControls = function() {
             row: 0, col: 0,
             hp: def.hp, maxHp: def.hp, dmg: def.dmg, range: def.range, move: def.move,
             symbol: def.symbol, ability: def.ability, rangePattern: def.rangePattern, movePattern: def.movePattern || "orthogonal",
+            thrower: !!def.thrower,
             abilityCooldowns: {}, runes: [], apMax: def.apMax || 2, ap: def.apMax || 2,
           };
           this.updateUnitPanel(preview);
@@ -4244,13 +4897,20 @@ Game.prototype.chooseAIPurchaseType = function() {
   const aiUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.AI);
   const playerUnits = this.entities.filter(e => e.kind === "unit" && e.team === Config.TEAM.PLAYER);
   const uniqueAffordable = affordable.filter(t => !this.purchasedUnits[Config.TEAM.AI].has(t));
+  if (aiUnits.length === 0) {
+    const cheapDrafted = this.getDraftedAffordableTypeForAI(2);
+    if (cheapDrafted && this.energy[Config.TEAM.AI] >= (defs[cheapDrafted].cost || 0)) return cheapDrafted;
+  }
   const needHealer = aiUnits.some(u => u.hp < u.maxHp);
   if (needHealer && uniqueAffordable.includes("Mage")) return "Mage";
   const preferRanged = playerUnits.length === 0 || playerUnits.some(u => u.type === "Warrior");
-  const weights = { Warrior: 1, Archer: 2, Mage: 1, Paladin: 2, Berserker: 2, Builder: 2, Alchemist: 2, Rogue: 2, Cleric: 1, Firecaller: 2, Magnet: 1, Avenger: 1, Necromancer: 1, Hex: 1, Sludge: 1, Druid: 1, Sentinel: 2, Ballista: 2, Bulwark: 2, Stalker: 2 };
+  const weights = { Warrior: 1, Archer: 2, Mage: 1, Paladin: 2, Berserker: 2, Builder: 2, Alchemist: 2, Rogue: 2, Cleric: 1, Firecaller: 2, Magnet: 1, Avenger: 1, Necromancer: 1, Hex: 1, Sludge: 1, Druid: 1, Sentinel: 2, Ballista: 2, Bulwark: 2, Stalker: 2, Slicer: 2, "Bounty Hunter": 2, Silencer: 2 };
   if (preferRanged) { weights.Archer += 1; weights.Paladin += 1; }
   if (playerUnits.some(u => ["Archer", "Ballista", "Tidewalker"].includes(u.type))) weights.Stalker += 1;
+  if (playerUnits.some(u => this.getUnitClass(u.type) === "Tank")) weights.Slicer += 2;
+  if (playerUnits.some(u => (u.ap || 0) > 0)) weights.Silencer += 1;
   if (aiUnits.length < 2 && uniqueAffordable.includes("Bulwark")) weights.Bulwark += 1;
   const list = uniqueAffordable.flatMap(t => Array(Math.max(1, weights[t] || 1)).fill(t));
-  return list[Math.floor(Math.random() * list.length)];
+  if (list.length) return list[Math.floor(Math.random() * list.length)];
+  return affordable[0] || null;
 };

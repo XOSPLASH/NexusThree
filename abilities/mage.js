@@ -1,17 +1,17 @@
-// Mage abilities
+﻿// Mage abilities
 (function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Mage = {
-    hp: 5, range: 2, dmg: 2, move: 2, cost: 4,
-    symbol: "🔮", ability: "Crowdcontrol Mage",
+    hp: 50, range: 2, dmg: 20, move: 2, cost: 4,
+    symbol: "\uD83D\uDD2E", ability: "Crowdcontrol Mage",
     rangePattern: "square", movePattern: "orthogonal",
     cooldowns: { "Frostbolt": 4 },
     leveling: {
       xpToLevel: { 2: 7, 3: 14 },
       levels: {
         2: [
-          { label: "+1 Damage", stat: "dmg", amount: 1 },
+          { label: "+10 Damage", stat: "dmg", amount: 10 },
         ],
         3: [
           { label: "+1 Range", stat: "range", amount: 1 },
@@ -21,10 +21,10 @@
   };
   const makeFrostbolt = () => ({
     name: "Frostbolt",
-    desc: "Deal 2 damage and drain all AP (stun) from target enemy.",
+    desc: "Deal 20 damage and drain all AP (stun) from target enemy.",
     range: 3,
     rangePattern: "square",
-    damage: 2,
+    damage: 20,
     requiresTarget: true,
     computeTargets(game, unit) {
       const res = [];
@@ -45,7 +45,7 @@
     perform(game, unit, r, c) {
       const target = game.occupants[r][c];
       if (target) {
-        game.applyDamage(target, 2, unit);
+        game.applyDamage(target, 20, unit);
         if (target.kind === "unit") {
            target.ap = 0;
            target.stunnedTurns = Math.max((target.stunnedTurns || 0), 1);
@@ -66,3 +66,5 @@
   });
   window.Abilities.Mage = [makeFrostbolt()];
 })();
+
+

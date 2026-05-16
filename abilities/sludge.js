@@ -1,16 +1,17 @@
-(function() {
+﻿(function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Sludge = {
-    hp: 6, range: 2, dmg: 1, move: 2, cost: 5,
-    symbol: "🫧", ability: "Prevent Entry",
+    hp: 60, range: 2, dmg: 10, move: 2, cost: 5,
+    class: "Disruptor",
+    symbol: "\uD83E\uDEE7", ability: "Prevent Entry",
     rangePattern: "select", movePattern: "orthogonal",
     cooldowns: { "Mire": 5 },
     leveling: {
       xpToLevel: { 2: 8, 3: 16 },
       levels: {
         2: [
-          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "+10 Max HP", stat: "maxHp", amount: 10, heal: 10 },
         ],
         3: [
           { label: "+1 Move", stat: "move", amount: 1 },
@@ -49,3 +50,5 @@
   });
   window.Abilities.Sludge = [makeMire()];
 })(); 
+
+

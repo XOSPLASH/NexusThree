@@ -1,14 +1,14 @@
-// Tidewalker unit with Water Walker passive and Harpoon Volley ability
+﻿// Tidewalker unit with Water Walker passive and Harpoon Volley ability
 (function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Tidewalker = {
-    hp: 6,
+    hp: 60,
     range: 3,
-    dmg: 2,
+    dmg: 20,
     move: 3,
     cost: 4,
-    symbol: "🪝",
+    symbol: "\uD83E\uDE9D",
     ability: "Harpoon Volley: fire a piercing harpoon in a straight line. (Cooldown 3)",
     rangePattern: "straight",
     movePattern: "orthogonal",
@@ -17,7 +17,7 @@
       xpToLevel: { 2: 6, 3: 13 },
       levels: {
         2: [ { label: "+1 Range", stat: "range", amount: 1 } ],
-        3: [ { label: "+1 Damage", stat: "dmg", amount: 1 } ]
+        3: [ { label: "+10 Damage", stat: "dmg", amount: 10 } ]
       }
     }
   };
@@ -27,7 +27,7 @@
     desc: "Fire a piercing harpoon in a straight line up to 4 tiles. Pierces enemies until hitting a wall. Cooldown 3.",
     range: 4,
     rangePattern: "straight",
-    damage: 3,
+    damage: 30,
     piercing: true,
     piercingLabel: "Hits every enemy on the line",
     requiresTarget: true,
@@ -45,7 +45,7 @@
         if (terr === "wall" || terr === "water" || terr === "fortwall") break;
         const occ = game.occupants[rr][cc];
         if (occ && occ.team !== unit.team) {
-          game.applyDamage(occ, 3, unit);
+          game.applyDamage(occ, 30, unit);
         }
         if (rr === r && cc === c) break;
         rr += dr;
@@ -61,3 +61,5 @@
   window.Abilities = window.Abilities || {};
   window.Abilities.Tidewalker = [ makeHarpoon() ];
 })();
+
+

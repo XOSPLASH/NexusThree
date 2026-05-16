@@ -1,9 +1,9 @@
-(function() {
+﻿(function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Hex = {
-    hp: 5, range: 3, dmg: 2, move: 2, cost: 4,
-    symbol: "🧤", ability: "Punish enemies",
+    hp: 50, range: 3, dmg: 20, move: 2, cost: 4,
+    symbol: "\uD83E\uDDE4", ability: "Punish enemies",
     rangePattern: "orthogonal", movePattern: "orthogonal",
     cooldowns: { "Hex": 3 },
     leveling: {
@@ -13,7 +13,7 @@
           { label: "+1 Range", stat: "range", amount: 1 },
         ],
         3: [
-          { label: "+1 Damage", stat: "dmg", amount: 1 },
+          { label: "+10 Damage", stat: "dmg", amount: 10 },
           { label: "Hex cooldown -1", stat: "cooldown", ability: "Hex", amount: -1 },
         ],
       },
@@ -21,7 +21,7 @@
   };
   const makeHex = () => ({
     name: "Hex",
-    desc: "Mark an enemy within range for 2 turns; marked units take +1 damage.",
+    desc: "Mark an enemy within range for 2 turns; marked units take +10 damage.",
     range: 3,
     rangePattern: "orthogonal",
     requiresTarget: true,
@@ -58,3 +58,5 @@
   window.Abilities = window.Abilities || {};
   window.Abilities.Hex = [makeHex()];
 })(); 
+
+

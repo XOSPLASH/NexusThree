@@ -25,6 +25,7 @@ const makeUnit = (team, type, row, col) => ({
   symbol: unitDefs[type].symbol,
   ability: unitDefs[type].ability,
   rangePattern: unitDefs[type].rangePattern,
+  thrower: !!(unitDefs[type] && unitDefs[type].thrower),
   movePattern: unitDefs[type].movePattern || "orthogonal",
   abilityCooldowns: {},
   cooldownMods: {},
@@ -35,6 +36,7 @@ const makeUnit = (team, type, row, col) => ({
   apMax: unitDefs[type].apMax || 2,
   ap: unitDefs[type].apMax || 2,
   stunnedTurns: 0,
+  silencedTurns: 0,
   hexTurns: 0,
   burnTurns: 0,
   beastTurns: 0,
@@ -52,8 +54,8 @@ const makeUnit = (team, type, row, col) => ({
 const defaultLeveling = {
   xpToLevel: { 2: 6, 3: 12 },
   levels: {
-    2: [{ label: "+1 Damage", stat: "dmg", amount: 1 }],
-    3: [{ label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 }],
+    2: [{ label: "+10 Damage", stat: "dmg", amount: 10 }],
+    3: [{ label: "+10 Max HP", stat: "maxHp", amount: 10, heal: 10 }],
   },
 };
 

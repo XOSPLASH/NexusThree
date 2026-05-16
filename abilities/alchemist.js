@@ -1,19 +1,19 @@
-// Alchemist abilities
+﻿// Alchemist abilities
 (function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Alchemist = {
-    hp: 6, range: 3, dmg: 2, move: 2, cost: 4,
-    symbol: "⚗️", ability: "Catalyze a 3x3 area",
+    hp: 60, range: 3, dmg: 20, move: 2, cost: 4,
+    symbol: "\u2697\uFE0F", ability: "Catalyze a 3x3 area",
     rangePattern: "thrower", movePattern: "square",
     cooldowns: { "Catalyze": 5 }
   };
   const makeCatalyze = () => ({
     name: "Catalyze",
-    desc: "Select a 3x3 area to damage enemies (3x3 radius).",
+    desc: "Select a 3x3 area to deal 30 damage to enemies.",
     range: 3,
     rangePattern: "select",
-    damage: 4,
+    damage: 30,
     requiresTarget: true,
     computeTargets(game, unit) {
       const res = [];
@@ -34,7 +34,7 @@
           if (!game.inBounds(rr, cc)) continue;
           const occ = game.occupants[rr][cc];
           if (occ && occ.team !== unit.team) {
-            game.applyDamage(occ, 3, unit);
+            game.applyDamage(occ, 30, unit);
           }
           const cell = game.board.getCell(rr, cc);
           if (cell) {
@@ -52,3 +52,4 @@
   });
   window.Abilities.Alchemist = [makeCatalyze()];
 })();
+

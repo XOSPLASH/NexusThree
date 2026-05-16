@@ -1,10 +1,10 @@
-// Rogue abilities
+﻿// Rogue abilities
 (function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Rogue = {
-    hp: 5, range: 1, dmg: 4, move: 3, cost: 3,
-    symbol: "🗡️", ability: "Classic Assasin",
+    hp: 50, range: 1, dmg: 40, move: 3, cost: 3,
+    symbol: "\uD83D\uDDE1\uFE0F", ability: "Classic Assasin",
     rangePattern: "orthogonal", movePattern: "orthogonal",
     cooldowns: { "Shadow Strike": 3 },
     leveling: {
@@ -14,7 +14,7 @@
           { label: "+1 Move", stat: "move", amount: 1 },
         ],
         3: [
-          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "+10 Max HP", stat: "maxHp", amount: 10, heal: 10 },
           { label: "Shadow Strike cooldown -1", stat: "cooldown", ability: "Shadow Strike", amount: -1 },
         ],
       },
@@ -22,10 +22,10 @@
   };
   const makeShadowStrike = () => ({
     name: "Shadow Strike",
-    desc: "Teleport adjacent to an enemy within range 4 and deal 3 damage.",
+    desc: "Teleport adjacent to an enemy within range 4 and deal 30 damage.",
     range: 4,
     rangePattern: "square",
-    damage: 3,
+    damage: 30,
     requiresTarget: true,
     computeTargets(game, unit) {
       const res = [];
@@ -95,7 +95,7 @@
       enemies.sort((a, b) => a.hp - b.hp);
       if (enemies.length > 0) {
         const target = enemies[0];
-        game.applyDamage(target, 3, unit);
+        game.applyDamage(target, 30, unit);
         game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Rogue`, ability: "Shadow Strike", target: target.type });
       }
       
@@ -106,3 +106,5 @@
   });
   window.Abilities.Rogue = [makeShadowStrike()];
 })();
+
+

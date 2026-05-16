@@ -1,17 +1,18 @@
-// Firecaller abilities
+﻿// Firecaller abilities
 (function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Firecaller = {
-    hp: 5, range: 3, dmg: 2, move: 2, cost: 4,
-    symbol: "🔥", ability: "Area control burst",
+    hp: 50, range: 3, dmg: 20, move: 2, cost: 4,
+    class: "Disruptor",
+    symbol: "\uD83D\uDD25", ability: "Area control burst",
     rangePattern: "square", movePattern: "orthogonal",
     cooldowns: { "Ignite": 5 },
     leveling: {
       xpToLevel: { 2: 7, 3: 15 },
       levels: {
         2: [
-          { label: "+1 Damage", stat: "dmg", amount: 1 },
+          { label: "+10 Damage", stat: "dmg", amount: 10 },
         ],
         3: [
           { label: "+1 Range", stat: "range", amount: 1 },
@@ -22,10 +23,10 @@
   };
   const makeIgnite = () => ({
     name: "Ignite",
-    desc: "Choose a tile and deal 1 fire damage to every unit in the 3x3 area. Leaves fire for 2 turns. Cooldown 5.",
+    desc: "Choose a tile and deal 10 fire damage to every unit in the 3x3 area. Leaves fire for 2 turns. Cooldown 5.",
     range: 3,
     rangePattern: "select",
-    damage: 1,
+    damage: 10,
     affectsAll: true,
     area: "3x3",
     requiresTarget: true,
@@ -48,7 +49,7 @@
           if (!game.inBounds(rr, cc)) continue;
           const occ = game.occupants[rr][cc];
           if (occ) {
-            game.applyDamage(occ, 1, occ.team === unit.team ? null : unit);
+            game.applyDamage(occ, 10, occ.team === unit.team ? null : unit);
           }
           if (game.terrain[rr][cc] === "water") continue;
           game.hazards[rr][cc] = { kind: "fire", turns: 2, ownerTeam: unit.team };
@@ -70,3 +71,5 @@
   });
   window.Abilities.Firecaller = [makeIgnite()];
 })(); 
+
+

@@ -1,10 +1,10 @@
-(function() {
+﻿(function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Stalker = {
-    hp: 4, range: 2, dmg: 3, move: 3, cost: 4,
+    hp: 40, range: 2, dmg: 30, move: 3, cost: 4,
     class: "Assassin",
-    symbol: "🦂", ability: "Forest ambush striker",
+    symbol: "\uD83E\uDD82", ability: "Forest ambush striker",
     role: "Forest Ambusher",
     rangePattern: "square", movePattern: "orthogonal",
     cooldowns: { "Ambush": 3 },
@@ -15,7 +15,7 @@
           { label: "+1 Move", stat: "move", amount: 1 },
         ],
         3: [
-          { label: "+1 Damage", stat: "dmg", amount: 1 },
+          { label: "+10 Damage", stat: "dmg", amount: 10 },
           { label: "Ambush cooldown -1", stat: "cooldown", ability: "Ambush", amount: -1 },
         ],
       },
@@ -31,7 +31,7 @@
   window.Abilities = window.Abilities || {};
   window.Abilities.Stalker = [{
     name: "Ambush",
-    desc: "Strike an enemy at range 2. From forest, range becomes 3, damage becomes 5, and Stalker dashes adjacent if possible.",
+    desc: "Strike an enemy at range 2. From forest, range becomes 3, damage becomes 50, and Stalker dashes adjacent if possible.",
     range: 2,
     rangePattern: "square",
     requiresTarget: true,
@@ -53,7 +53,7 @@
       const target = game.occupants[r][c] || game.entities.find(e => e.row === r && e.col === c && e.team !== unit.team);
       if (!target || target.team === unit.team) return;
       const fromForest = game.terrain[unit.row] && game.terrain[unit.row][unit.col] === "forest";
-      game.applyDamage(target, fromForest ? 5 : 3, unit);
+      game.applyDamage(target, fromForest ? 50 : 30, unit);
       if (fromForest) {
         const landings = [];
         for (let dr = -1; dr <= 1; dr++) {
@@ -81,3 +81,5 @@
     },
   }];
 })();
+
+

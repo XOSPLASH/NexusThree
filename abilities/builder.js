@@ -1,10 +1,10 @@
-// Builder abilities
+﻿// Builder abilities
 (function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Builder = {
-    hp: 5, range: 1, dmg: 1, move: 2, cost: 2,
-    symbol: "🛠️", ability: "Terrain transformation",
+    hp: 50, range: 1, dmg: 10, move: 2, cost: 2,
+    symbol: "\uD83D\uDEE0\uFE0F", ability: "Terrain transformation",
     rangePattern: "orthogonal", movePattern: "orthogonal",
     cooldowns: { "Construct": 6 },
     leveling: {
@@ -14,7 +14,7 @@
           { label: "+1 Move", stat: "move", amount: 1 },
         ],
         3: [
-          { label: "+1 Max HP", stat: "maxHp", amount: 1, heal: 1 },
+          { label: "+10 Max HP", stat: "maxHp", amount: 10, heal: 10 },
           { label: "+1 Range", stat: "range", amount: 1 },
         ],
       },
@@ -42,7 +42,7 @@
           // Check if already has construction site (shouldn't exist anymore, but for safety)
           if (game.constructionSites[r][c]) continue;
 
-          // Valid targets: Empty, Water, Wall, Fortwall (to clear)
+          // Valid targets: Empty, Water, Wall, Fortwall, Forest (to clear)
           res.push([r, c]);
         }
       }
@@ -61,7 +61,7 @@
       // Apply construction/clear rules
       if (terr === "water") {
         game.terrain[r][c] = "bridge";
-      } else if (terr === "wall" || terr === "fortwall") {
+      } else if (terr === "wall" || terr === "fortwall" || terr === "forest") {
         game.terrain[r][c] = null; // Clear
       } else if (terr === "bridge") {
         game.terrain[r][c] = "water"; // Clear bridge -> water
@@ -99,3 +99,5 @@
   window.Abilities = window.Abilities || {};
   window.Abilities.Builder = [makeConstruct()];
 })();
+
+

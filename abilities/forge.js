@@ -5,13 +5,13 @@
     radius: 1,
     duration: 5,
     cost: 5,
-    symbol: "⚒️",
+    symbol: "\u2692\uFE0F",
     color: "#94a3b8",
     desc: "A heavy industrial zone that reinforces armor. Grants 1 turn of Guard to Tank units within the area at the start of every turn.",
     shopLabel: "Tank Guard",
     effectType: "turn_start_guard",
-    amount: 1,
-    guardValue: 1,
+    amount: 10,
+    guardValue: 10,
     filter: "Tank"
   };
 })();

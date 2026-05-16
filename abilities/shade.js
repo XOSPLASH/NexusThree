@@ -1,21 +1,21 @@
-// Shade unit and Shadow Realm ability
+﻿// Shade unit and Shadow Realm ability
 (function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Shade = {
-    hp: 5,
+    hp: 50,
     range: 1,
-    dmg: 3,
+    dmg: 30,
     move: 3,
     cost: 5,
-    symbol: "👤",
+    symbol: "\uD83D\uDC64",
     ability: "Shadow Step (Active): enter the Shadow Realm for 3 turns. Untargetable by opponents without Shadow presence.",
     rangePattern: "orthogonal",
     movePattern: "orthogonal",
     leveling: {
       xpToLevel: { 2: 6, 3: 12 },
       levels: {
-        2: [ { label: "+1 Damage", stat: "dmg", amount: 1 } ],
+        2: [ { label: "+10 Damage", stat: "dmg", amount: 10 } ],
         3: [ { label: "+1 Move", stat: "move", amount: 1 } ]
       }
     }
@@ -44,3 +44,5 @@
   window.Abilities = window.Abilities || {};
   window.Abilities.Shade = [ makeShadowStep() ];
 })();
+
+

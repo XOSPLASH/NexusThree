@@ -1,10 +1,10 @@
-// Archer abilities
+﻿// Archer abilities
 (function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Archer = {
-    hp: 5, range: 3, dmg: 2, move: 2, cost: 3,
-    symbol: "🏹", ability: "Piercing marksman",
+    hp: 50, range: 3, dmg: 20, move: 2, cost: 3,
+    symbol: "\uD83C\uDFF9", ability: "Piercing marksman",
     rangePattern: "straight", movePattern: "orthogonal",
     cooldowns: { "Snipe": 4 },
     leveling: {
@@ -14,7 +14,7 @@
           { label: "+1 Range", stat: "range", amount: 1 },
         ],
         3: [
-          { label: "+1 Damage", stat: "dmg", amount: 1 },
+          { label: "+10 Damage", stat: "dmg", amount: 10 },
         ],
       },
     },
@@ -24,7 +24,7 @@
     desc: "Choose any tile in a straight line up to 4. Shoot through all enemies in that line, stopping at walls. Cooldown 4.",
     range: 4,
     rangePattern: "straight",
-    damage: 3,
+    damage: 30,
     piercing: true,
     piercingLabel: "Hits every enemy on the line",
     requiresTarget: true,
@@ -42,7 +42,7 @@
         if (terr === "wall" || terr === "water" || terr === "fortwall") break;
         const occ = game.occupants[rr][cc];
         if (occ && occ.team !== unit.team) {
-          game.applyDamage(occ, 3, unit);
+          game.applyDamage(occ, 30, unit);
         }
         if (rr === r && cc === c) break;
         rr += dr;
@@ -56,3 +56,5 @@
   });
   window.Abilities.Archer = [makeSnipe()];
 })();
+
+
