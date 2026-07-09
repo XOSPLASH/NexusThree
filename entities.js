@@ -31,13 +31,12 @@ const makeUnit = (team, type, row, col) => ({
   cooldownMods: {},
   globalCooldownMod: 0,
   runes: [],
-  exp: 0,
-  level: 1,
   apMax: unitDefs[type].apMax || 2,
   ap: unitDefs[type].apMax || 2,
   stunnedTurns: 0,
   silencedTurns: 0,
   hexTurns: 0,
+  diseasedTurns: 0,
   burnTurns: 0,
   beastTurns: 0,
   guardTurns: 0,
@@ -47,21 +46,10 @@ const makeUnit = (team, type, row, col) => ({
   waterWalker: unitDefs[type] && !!unitDefs[type].waterWalker,
   inShadowRealm: false,
   shadowTurns: 0,
+  diseased: false,
+  diseaseSourceTeam: null,
+  avengerConsumedDeaths: 0,
   isBeast: false,
-  leveling: unitDefs[type].leveling || null,
 });
 
-const defaultLeveling = {
-  xpToLevel: { 2: 6, 3: 12 },
-  levels: {
-    2: [{ label: "+10 Damage", stat: "dmg", amount: 10 }],
-    3: [{ label: "+10 Max HP", stat: "maxHp", amount: 10, heal: 10 }],
-  },
-};
-
 window.Entities = { unitDefs, biomeDefs, makeBase, makeUnit };
-window.Entities.getLevelingProfile = function(type) {
-  const def = unitDefs[type];
-  if (!def) return defaultLeveling;
-  return def.leveling || defaultLeveling;
-};

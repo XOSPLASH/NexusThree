@@ -5,9 +5,7 @@
       baseName: "Vitality",
       cost: 2,
       stages: [
-        { level: 1, name: "Vitality I", desc: "+2 Max HP", turnsToNext: 2, apply: (u) => { u.maxHp += 2; u.hp += 2; } },
-        { level: 2, name: "Vitality II", desc: "+3 Max HP", turnsToNext: 2, apply: (u) => { u.maxHp += 3; u.hp += 3; } },
-        { level: 3, name: "Vitality III", desc: "+4 Max HP", apply: (u) => { u.maxHp += 4; u.hp += 4; } },
+        { level: 1, name: "Vitality", desc: "+2 Max HP", apply: (u) => { u.maxHp += 2; u.hp += 2; } },
       ],
     },
     {
@@ -15,9 +13,7 @@
       baseName: "Power",
       cost: 2,
       stages: [
-        { level: 1, name: "Power I", desc: "+2 Damage", turnsToNext: 2, apply: (u) => { u.dmg += 2; } },
-        { level: 2, name: "Power II", desc: "+3 Damage", turnsToNext: 2, apply: (u) => { u.dmg += 1; } },
-        { level: 3, name: "Power III", desc: "+4 Damage", apply: (u) => { u.dmg += 1; } },
+        { level: 1, name: "Power", desc: "+2 Damage", apply: (u) => { u.dmg += 2; } },
       ],
     },
     {
@@ -25,9 +21,7 @@
       baseName: "Swiftness",
       cost: 3,
       stages: [
-        { level: 1, name: "Swiftness I", desc: "+1 Move", turnsToNext: 4, apply: (u) => { u.move += 1; } },
-        { level: 2, name: "Swiftness II", desc: "+2 Move", turnsToNext: 5, apply: (u) => { u.move += 1; } },
-        { level: 3, name: "Swiftness III", desc: "+2 Move, +1 Damage", apply: (u) => { u.dmg += 1; } },
+        { level: 1, name: "Swiftness", desc: "+1 Move", apply: (u) => { u.move += 1; } },
       ],
     },
     {
@@ -35,9 +29,7 @@
       baseName: "Scope",
       cost: 3,
       stages: [
-        { level: 1, name: "Scope I", desc: "+1 Range", turnsToNext: 4, apply: (u) => { u.range += 1; } },
-        { level: 2, name: "Scope II", desc: "+2 Range", turnsToNext: 5, apply: (u) => { u.range += 1; } },
-        { level: 3, name: "Scope III", desc: "+2 Range, +1 Damage", apply: (u) => { u.dmg += 1; } },
+        { level: 1, name: "Scope", desc: "+1 Range", apply: (u) => { u.range += 1; } },
       ],
     },
     {
@@ -45,8 +37,7 @@
       baseName: "Frenzy",
       cost: 4,
       stages: [
-        { level: 1, name: "Frenzy I", desc: "+1 Max AP", turnsToNext: 5, apply: (u) => { u.apMax += 1; u.ap += 1; } },
-        { level: 2, name: "Frenzy II", desc: "+1 Max AP, +1 Move", apply: (u) => { u.move += 1; } },
+        { level: 1, name: "Frenzy", desc: "+1 Max AP", apply: (u) => { u.apMax += 1; u.ap += 1; } },
       ],
     },
     {
@@ -54,8 +45,7 @@
       baseName: "Rampage",
       cost: 4,
       stages: [
-        { level: 1, name: "Rampage I", desc: "+4 Damage, -3 Max HP", turnsToNext: 5, apply: (u) => { u.maxHp -= 3; u.hp = Math.max(1, u.hp - 3); u.dmg += 4; } },
-        { level: 2, name: "Rampage II", desc: "+5 Damage, -4 Max HP", apply: (u) => { u.maxHp -= 1; u.hp = Math.max(1, Math.min(u.hp - 1, u.maxHp)); u.dmg += 1; } },
+        { level: 1, name: "Rampage", desc: "+4 Damage, -3 Max HP", apply: (u) => { u.maxHp -= 3; u.hp = Math.max(1, u.hp - 3); u.dmg += 4; } },
       ],
     },
     {
@@ -63,8 +53,7 @@
       baseName: "Deft",
       cost: 5,
       stages: [
-        { level: 1, name: "Deft I", desc: "+1 Range, +1 Move", turnsToNext: 5, apply: (u) => { u.range += 1; u.move += 1; } },
-        { level: 2, name: "Deft II", desc: "+1 Range, +2 Move", apply: (u) => { u.move += 1; } },
+        { level: 1, name: "Deft", desc: "+1 Range, +1 Move", apply: (u) => { u.range += 1; u.move += 1; } },
       ],
     },
     {
@@ -74,9 +63,8 @@
       stages: [
         {
           level: 1,
-          name: "Chrono I",
+          name: "Chrono",
           desc: "+1 Ability Cooldown",
-          turnsToNext: 6,
           apply: (u) => {
             u.globalCooldownMod = (u.globalCooldownMod || 0) - 1;
             if (u.abilityCooldowns) {
@@ -86,13 +74,20 @@
             }
           }
         },
+      ],
+    },
+    {
+      id: "rune_mending",
+      baseName: "Mending",
+      cost: 4,
+      stages: [
         {
-          level: 2,
-          name: "Chrono II",
-          desc: "+1 Ability Cooldown, +1 Range",
-          apply: (u) => {
-            u.range += 1;
-          }
+          level: 1,
+          name: "Mending",
+          desc: "Heal 10 HP at the start of each of this unit's turns.",
+          apply: () => {},
+          onTurnStart: (u) => { u.hp = Math.min(u.maxHp, u.hp + 10); },
+          healPerTurn: 10,
         },
       ],
     }

@@ -2,7 +2,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Bulwark = {
-    hp: 90, range: 1, dmg: 20, move: 2, cost: 4,
+    hp: 90, range: 1, dmg: 20, move: 2, cost: 7,
     class: "Tank",
     symbol: "\uD83E\uDDEC", ability: "Protect nearby allies",
     role: "Ally Protector",

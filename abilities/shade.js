@@ -7,7 +7,7 @@
     range: 1,
     dmg: 30,
     move: 3,
-    cost: 5,
+    cost: 6,
     symbol: "\uD83D\uDC64",
     ability: "Shadow Step (Active): enter the Shadow Realm for 3 turns. Untargetable by opponents without Shadow presence.",
     rangePattern: "orthogonal",

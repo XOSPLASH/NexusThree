@@ -2,7 +2,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Stalker = {
-    hp: 40, range: 2, dmg: 30, move: 3, cost: 4,
+    hp: 40, range: 2, dmg: 30, move: 3, cost: 5,
     class: "Assassin",
     symbol: "\uD83E\uDD82", ability: "Forest ambush striker",
     role: "Forest Ambusher",

@@ -2,7 +2,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Silencer = {
-    hp: 50, range: 2, dmg: 10, move: 2, cost: 4,
+    hp: 50, range: 2, dmg: 10, move: 2, cost: 8,
     class: "Disruptor",
     role: "Attack Lockdown",
     symbol: "\uD83E\uDD2B", ability: "Stop enemy attacks",

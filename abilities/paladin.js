@@ -3,7 +3,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Paladin = {
-    hp: 90, range: 1, dmg: 30, move: 2, cost: 6,
+    hp: 90, range: 1, dmg: 30, move: 2, cost: 7,
     symbol: "\uD83D\uDEE1\uFE0F", ability: "Medieval Brawler",
     rangePattern: "orthogonal", movePattern: "orthogonal",
     cooldowns: { "Smite": 3 },

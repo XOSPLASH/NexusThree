@@ -2,7 +2,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Avenger = {
-    hp: 40, range: 1, dmg: 20, move: 2, cost: 2,
+    hp: 40, range: 1, dmg: 20, move: 2, cost: 3,
     symbol: "\uD83E\uDD85", ability: "Gain buffs from ally deaths",
     rangePattern: "orthogonal", movePattern: "orthogonal",
     cooldowns: { "Vengeance": 4 },
@@ -24,7 +24,7 @@
     desc: "Active: Gain +10 damage, +10 HP, and +10 max HP per ally death.",
     requiresTarget: false,
     perform(game, unit) {
-      const deaths = (game.teamDeaths && game.teamDeaths[unit.team]) || 0;
+      const deaths = game.getAvengerPendingDeaths ? game.getAvengerPendingDeaths(unit) : ((game.teamDeaths && game.teamDeaths[unit.team]) || 0);
       if (deaths <= 0) {
         unit.ap = Math.max(0, unit.ap - 1);
         return;
@@ -32,10 +32,11 @@
       unit.dmg += deaths * 10;
       unit.maxHp += deaths * 10;
       unit.hp = Math.min(unit.maxHp, unit.hp + (deaths * 10));
+      unit.avengerConsumedDeaths = Number(unit.avengerConsumedDeaths || 0) + deaths;
       unit.ap = Math.max(0, unit.ap - 1);
       unit.abilityCooldowns["Vengeance"] = game.getAbilityCooldown(unit, "Vengeance");
       if (game.playSfx) game.playSfx("ability");
-      game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Avenger`, ability: "Vengeance", msg: `Buffed by +${deaths * 10}` });
+      game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Avenger`, ability: "Vengeance", msg: `Claimed ${deaths} fallen allies for +${deaths * 10}` });
       game.updateUnitPanel(unit);
     },
   });

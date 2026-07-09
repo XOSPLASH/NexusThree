@@ -2,7 +2,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Slicer = {
-    hp: 60, range: 1, dmg: 20, move: 3, cost: 4,
+    hp: 60, range: 1, dmg: 20, move: 3, cost: 5,
     class: "Breaker",
     role: "Tank Killer",
     symbol: "\uD83E\uDE9A", ability: "Current HP execution pressure",

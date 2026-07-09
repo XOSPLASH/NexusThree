@@ -5,6 +5,7 @@ window.Multiplayer = (function() {
   let peer = null;
   let conn = null;
   let game = null;
+  let peerId = "Loading...";
 
   const UI = {
     idDisplay: null,
@@ -34,6 +35,7 @@ window.Multiplayer = (function() {
 
     peer.on('open', (id) => {
       console.log('My peer ID is: ' + id);
+      peerId = id;
       UI.idDisplay.textContent = 'ID: ' + id;
       UI.idDisplay.style.cursor = 'pointer';
       UI.idDisplay.title = 'Click to copy';
@@ -43,9 +45,18 @@ window.Multiplayer = (function() {
         UI.idDisplay.textContent = 'Copied!';
         setTimeout(() => UI.idDisplay.textContent = oldText, 2000);
       };
+      if (game && game.menuOpen && game.menuView === "pvp" && game.renderMainMenu) {
+        game.renderMainMenu("pvp");
+      }
     });
 
     peer.on('connection', (connection) => {
+      if (game && game.canStartPvpDraft && !game.canStartPvpDraft()) {
+        game.logEvent({ type: 'error', msg: `PvP needs at least ${game.minimumPvpCards || 16} owned cards.` });
+        connection.close();
+        if (game.renderMainMenu) game.renderMainMenu("pvp");
+        return;
+      }
       if (conn) {
         connection.close();
         return;
@@ -78,7 +89,17 @@ window.Multiplayer = (function() {
 
     UI.connectBtn.onclick = () => {
       const targetId = UI.joinInput.value.trim();
+      connectTo(targetId);
+    };
+  }
+
+  function connectTo(targetId) {
       if (!targetId) return;
+      if (game && game.canStartPvpDraft && !game.canStartPvpDraft()) {
+        game.logEvent({ type: 'error', msg: `PvP needs at least ${game.minimumPvpCards || 16} owned cards.` });
+        if (game.renderMainMenu) game.renderMainMenu("pvp");
+        return;
+      }
       const connection = peer.connect(targetId);
       setupConnection(connection);
       // We are the guest (AI team, but we'll treat it as Player 2)
@@ -88,7 +109,6 @@ window.Multiplayer = (function() {
       UI.connectBtn.textContent = 'Connecting...';
       game.updateHUD();
       game.renderEntities();
-    };
   }
 
   function setupConnection(connection) {
@@ -100,6 +120,7 @@ window.Multiplayer = (function() {
       UI.joinInput.style.display = 'none';
       game.logEvent({ type: 'status', msg: 'PvP Connection Established!' });
       updateTurnIndicator();
+      if (game && game.menuOpen && game.renderMainMenu) game.renderMainMenu("pvp");
     });
 
     conn.on('data', (data) => {
@@ -232,6 +253,9 @@ window.Multiplayer = (function() {
 
   return {
     init,
-    sendPacket
+    sendPacket,
+    connectTo,
+    getPeerId: () => peerId,
+    isConnected: () => !!(conn && conn.open)
   };
 })();

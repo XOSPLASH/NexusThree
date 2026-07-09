@@ -48,23 +48,32 @@
     <script defer src="abilities/slicer.js"></script>
     <script defer src="abilities/bounty-hunter.js"></script>
     <script defer src="abilities/silencer.js"></script>
+    <script defer src="abilities/geomancer.js"></script>
+    <script defer src="abilities/plague.js"></script>
+    <script defer src="player-data.js"></script>
     <script defer src="game.js"></script>
   </head>
   <body>
     <header class="app-header">
-      <h1 class="title">NexusThree</h1>
+      <div class="header-shell">
+        <div>
+          <h1 class="title">NexusThree</h1>
+          <div class="subtitle">Build a roster, win coins, open packs.</div>
+        </div>
+        <button id="menu-btn" class="btn btn-secondary header-menu-btn">Menu</button>
+      </div>
     </header>
 
     <main class="app-main">
       <!-- Left: Unit Details Panel -->
       <aside class="side left">
         <div id="unit-panel" class="panel">
-          <div class="panel-title">Unit Details</div>
+          <div class="panel-title">Card Details</div>
           <div class="unit-header">
             <div id="unit-icon" class="unit-icon">&mdash;</div>
             <div class="unit-info">
               <div id="unit-name" class="unit-name">None selected</div>
-              <div id="unit-desc" class="unit-desc">Select a unit to view details.</div>
+              <div id="unit-desc" class="unit-desc">Select a card to view details.</div>
             </div>
           </div>
           <div class="details-section stats-section">
@@ -83,6 +92,11 @@
         <div id="energy-bar" class="energy-bar">
           <div id="energy-player" class="energy-chip">Player: 🪙 0</div>
           <div id="energy-ai" class="energy-chip">AI: 🪙 0</div>
+        </div>
+        <div id="status-bar" class="energy-bar">
+          <div id="losses-player" class="energy-chip">Player Losses: 0</div>
+          <div id="losses-ai" class="energy-chip">AI Losses: 0</div>
+          <div id="coins-player" class="energy-chip">Coins: 0</div>
         </div>
           <button id="cancel-ability-btn" class="btn btn-secondary" style="display:none">Cancel Ability</button>
           <button id="end-turn" class="btn btn-primary">End Turn</button>
@@ -104,10 +118,10 @@
         </div>
       </div>
 
-      <!-- Right: Unit Shop Panel -->
+      <!-- Right: Card Shop Panel -->
       <aside class="side right">
         <div id="buy-panel" class="panel">
-          <div class="panel-title">Unit Shop</div>
+          <div class="panel-title">Card Shop</div>
           <div id="buy-controls"></div>
           <button id="buy-cancel" class="btn btn-secondary" style="display:none">Cancel Placement</button>
         </div>
@@ -117,11 +131,46 @@
     <!-- Abilities Overlay -->
     <div id="abilities-overlay" class="overlay hidden">
       <div class="panel shop-panel">
-        <div class="panel-title">Unit Abilities</div>
+        <div class="panel-title">Card Abilities</div>
         <ul id="abilities-list" class="list" style="margin-bottom: 20px; overflow-y: auto; max-height: 50vh;"></ul>
         <div style="display: flex; gap: 12px; justify-content: flex-end;">
           <button id="close-abilities-btn" class="btn btn-secondary">Close</button>
           <button id="ability-btn" class="btn btn-primary" style="display:none">Use Selected</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Menu Overlay -->
+    <div id="menu-overlay" class="menu-overlay hidden">
+      <div class="menu-panel">
+        <div class="menu-hero">
+          <div>
+            <div class="menu-kicker">Progression</div>
+            <div class="menu-title">Menu</div>
+            <div class="menu-copy">Spend coins on packs, inspect your collection, and launch a match mode.</div>
+          </div>
+          <div class="menu-resources">
+            <div class="menu-resource">
+              <span>Coins</span>
+              <strong id="menu-coins">0</strong>
+            </div>
+            <div class="menu-resource">
+              <span>Cards Owned</span>
+              <strong id="menu-owned-count">0</strong>
+            </div>
+          </div>
+        </div>
+        <div class="menu-layout">
+          <section class="menu-card menu-actions-card">
+            <div class="menu-card-title">Match Modes</div>
+            <button id="menu-vs-ai" class="btn btn-primary menu-action">Player vs AI</button>
+            <button id="menu-random-ai" class="btn btn-secondary menu-action">Random vs AI</button>
+          </section>
+          <section class="menu-card menu-collection-card">
+            <div class="menu-card-title">Your Collection</div>
+            <div id="menu-pack-result" class="menu-pack-result">Starter cards are unlocked automatically.</div>
+            <div id="menu-collection" class="menu-collection"></div>
+          </section>
         </div>
       </div>
     </div>

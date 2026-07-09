@@ -3,7 +3,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Warrior = {
-    hp: 80, range: 1, dmg: 20, move: 2, cost: 3,
+    hp: 80, range: 1, dmg: 20, move: 2, cost: 2,
     class: "Fighter",
     role: "Frontline Bruiser",
     symbol: "\u2694\uFE0F", ability: "Piercing frontline strike",

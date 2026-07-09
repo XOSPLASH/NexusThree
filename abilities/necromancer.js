@@ -3,7 +3,7 @@
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
   window.Entities.unitDefs.Necromancer = {
-    hp: 50, range: 2, dmg: 20, move: 2, cost: 4,
+    hp: 50, range: 2, dmg: 20, move: 2, cost: 6,
     symbol: "\u2620\uFE0F", ability: "Unit Control",
     rangePattern: "square", movePattern: "orthogonal",
     cooldowns: { "Raise Dead": 6 },

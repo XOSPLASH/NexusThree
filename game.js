@@ -8,6 +8,12 @@ class Game {
     this.buySelection = null;
     this.shopFilters = { filterValue: "all", sort: "cost" };
     this.draftFilters = { filterValue: "all", sort: "cost" };
+    this.collectionFilters = { query: "", classValue: "all", costValue: "all", rarityValue: "all", ownership: "owned" };
+    this.menuView = "home";
+    this.minimumPvpCards = 16;
+    this.standardDraftCardsNeeded = 16;
+    this.aiDraftLoaners = [];
+    this.hoverPreviewKey = "";
     this.overlay = null;
     this.runeTooltip = null;
     this.runeTooltipCleanup = null;
@@ -26,16 +32,21 @@ class Game {
     this.energyDelayOne = { [Config.TEAM.PLAYER]: false, [Config.TEAM.AI]: true }; // delay AI first gain
     this.nexusOwners = Array.from({ length: Config.ROWS }, () => Array(Config.COLS).fill(null));
     this.purchasedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
+    this.progression = window.Progression ? window.Progression.load() : { coins: 0, cards: {}, packResults: [] };
+    this.matchResolved = false;
+    this.menuOpen = true;
     this.isMultiplayer = false;
     this.playerTeam = Config.TEAM.PLAYER;
     this.shadowRealmView = false;
     this.previewBiomeCenter = null;
+    this.teamDeaths = { [Config.TEAM.PLAYER]: 0, [Config.TEAM.AI]: 0 };
     this.draftedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
     this.draft = {
       active: false,
       completed: false,
       mode: "menu",
       pickCount: 8,
+      randomized: false,
       sequence: [],
       currentIndex: 0,
       firstTeam: Config.TEAM.PLAYER,
@@ -61,6 +72,8 @@ class Game {
     this.renderBuyControls();
     this.repositionMPUI();
     this.setupDraftSystem();
+    this.showMainMenu();
+    this.saveProgressionState();
     
     if (window.Multiplayer) {
       window.Multiplayer.init(this);
@@ -108,6 +121,441 @@ class Game {
       const shouldMove = mpUI.parentElement !== centerWrap || mpUI.previousElementSibling !== boardRow;
       if (shouldMove) centerWrap.insertBefore(mpUI, boardRow.nextSibling);
     }
+  }
+
+  getProgressionState() {
+    if (!this.progression) this.progression = window.Progression ? window.Progression.load() : { coins: 0, cards: {}, packResults: [] };
+    return this.progression;
+  }
+
+  saveProgressionState() {
+    if (!window.Progression) return;
+    this.progression = window.Progression.save(this.getProgressionState());
+  }
+
+  isCardOwned(type) {
+    const state = this.getProgressionState();
+    return !!(window.Progression && window.Progression.isOwned(state, type));
+  }
+
+  isUnitOwned(type) {
+    return this.isCardOwned(type);
+  }
+
+  getOwnedCardTypes() {
+    const state = this.getProgressionState();
+    return window.Progression ? window.Progression.getOwnedCards(state) : [];
+  }
+
+  getOwnedUnitTypes() {
+    const defs = window.Entities && window.Entities.unitDefs ? window.Entities.unitDefs : {};
+    return this.getOwnedCardTypes().filter(type => !!defs[type]);
+  }
+
+  getOwnedBiomeTypes() {
+    const biomeDefs = window.Entities && window.Entities.biomeDefs ? window.Entities.biomeDefs : {};
+    return this.getOwnedCardTypes().filter(type => !!biomeDefs[type]);
+  }
+
+  getPvpCardShortfall() {
+    return Math.max(0, this.minimumPvpCards - this.getOwnedCardTypes().length);
+  }
+
+  canStartPvpDraft() {
+    return this.getPvpCardShortfall() === 0;
+  }
+
+  getCardDef(type) {
+    const defs = window.Entities && window.Entities.unitDefs ? window.Entities.unitDefs : {};
+    const biomeDefs = window.Entities && window.Entities.biomeDefs ? window.Entities.biomeDefs : {};
+    return defs[type] || biomeDefs[type] || null;
+  }
+
+  getCardKind(type) {
+    if (window.Progression && window.Progression.getCardKind) return window.Progression.getCardKind(type);
+    return (window.Entities && window.Entities.biomeDefs && window.Entities.biomeDefs[type]) ? "biome" : "unit";
+  }
+
+  getCardRarity(type) {
+    if (window.Progression && window.Progression.getCardRarity) return window.Progression.getCardRarity(type);
+    return "common";
+  }
+
+  formatRarity(type) {
+    const rarity = this.getCardRarity(type);
+    return rarity.charAt(0).toUpperCase() + rarity.slice(1);
+  }
+
+  getCollectionCardTypes() {
+    const defs = window.Entities && window.Entities.unitDefs ? window.Entities.unitDefs : {};
+    const biomeDefs = window.Entities && window.Entities.biomeDefs ? window.Entities.biomeDefs : {};
+    const cards = [
+      ...Object.keys(defs).filter((type) => type !== "Skeleton" && !defs[type].hiddenFromShop),
+      ...Object.keys(biomeDefs),
+    ];
+    return cards
+      .sort((a, b) => {
+        const aOwned = this.isCardOwned(a) ? 0 : 1;
+        const bOwned = this.isCardOwned(b) ? 0 : 1;
+        if (aOwned !== bOwned) return aOwned - bOwned;
+        const aDef = this.getCardDef(a) || {};
+        const bDef = this.getCardDef(b) || {};
+        const rarityOrder = { common: 0, rare: 1, epic: 2, legendary: 3 };
+        const rarityDiff = (rarityOrder[this.getCardRarity(a)] || 0) - (rarityOrder[this.getCardRarity(b)] || 0);
+        if (rarityDiff !== 0) return rarityDiff;
+        const costDiff = Number(aDef.cost || 0) - Number(bDef.cost || 0);
+        if (costDiff !== 0) return costDiff;
+        return String(a).localeCompare(String(b));
+      });
+  }
+
+  getCollectionCardTypesForFilters() {
+    const filters = this.collectionFilters || {};
+    const query = String(filters.query || "").trim().toLowerCase();
+    return this.getCollectionCardTypes().filter((type) => {
+      const def = this.getCardDef(type);
+      if (!def) return false;
+      const owned = this.isCardOwned(type);
+      if (filters.ownership === "owned" && !owned) return false;
+      if (filters.ownership === "locked" && owned) return false;
+      if (query && !String(type).toLowerCase().includes(query)) return false;
+      if (filters.rarityValue && filters.rarityValue !== "all" && this.getCardRarity(type) !== filters.rarityValue) return false;
+      if (filters.costValue && filters.costValue !== "all" && String(def.cost || 0) !== String(filters.costValue)) return false;
+      if (filters.classValue && filters.classValue !== "all") {
+        const cardClass = this.getCardKind(type) === "biome" ? "Biome" : this.getUnitClass(type);
+        if (cardClass !== filters.classValue) return false;
+      }
+      return true;
+    });
+  }
+
+  getCollectionCopyCount(type) {
+    const state = this.getProgressionState();
+    const entry = state.cards && state.cards[type];
+    if (!entry || !entry.owned) return 0;
+    return 1 + Math.max(0, Number(entry.duplicates || 0));
+  }
+
+  renderCollectionHTML() {
+    const cards = this.getCollectionCardTypesForFilters();
+    if (!cards.length) {
+      return `<div class="menu-empty-state">No cards match those filters.</div>`;
+    }
+    return cards.map((type) => {
+      const def = this.getCardDef(type);
+      if (!def) return "";
+      const owned = this.isCardOwned(type);
+      const copies = this.getCollectionCopyCount(type);
+      const duplicateCount = Math.max(0, copies - 1);
+      const kind = this.getCardKind(type);
+      const rarity = this.getCardRarity(type);
+      const role = kind === "biome" ? (def.shopLabel || "Biome") : this.getShopRoleSummary(type);
+      const cardClass = kind === "biome" ? "Biome" : this.getUnitClass(type);
+      return `
+        <div class="menu-card-tile rarity-${rarity}${owned ? "" : " locked"}">
+          <div class="menu-card-head">
+            <div class="menu-card-symbol ${this.getUnitVisualClass(type)}">${def.symbol}</div>
+            <div>
+              <div class="menu-card-name">${type}</div>
+              <div class="menu-card-meta">${role} | Cost ${def.cost || 0}</div>
+            </div>
+          </div>
+          <div class="menu-card-meta">${owned ? (def.ability || def.desc || "") : "Locked until opened from a pack."}</div>
+          <div class="menu-card-badges">
+            <span class="menu-badge">${owned ? `${copies} owned` : "Locked"}</span>
+            <span class="menu-badge rarity ${rarity}">${this.formatRarity(type)}</span>
+            <span class="menu-badge">${cardClass}</span>
+            ${duplicateCount > 0 ? `<span class="menu-badge duplicate">${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"}</span>` : ""}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  renderMenuHomeHTML() {
+    return `
+      <section class="menu-section">
+        <div class="menu-option-grid">
+          <button id="menu-vs-ai" class="menu-option">
+            <span class="menu-option-kicker">Battle</span>
+            <strong>Player vs AI</strong>
+            <small>Draft using your unlocked cards.</small>
+          </button>
+          <button id="menu-random-ai" class="menu-option">
+            <span class="menu-option-kicker">Battle</span>
+            <strong>Random vs AI</strong>
+            <small>Random draft from your unlocked cards.</small>
+          </button>
+        </div>
+      </section>
+    `;
+  }
+
+  renderPackViewHTML() {
+    const state = this.getProgressionState();
+    const cost = window.Progression ? window.Progression.packCost : 60;
+    const canOpen = (state.coins || 0) >= cost;
+    return `
+      <section class="menu-section pack-stage">
+        <div class="pack-shell${this.packOpening ? " opening" : ""}">
+          <div class="pack-stack" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <div>
+            <div class="menu-card-title">Card Pack</div>
+            <div class="pack-title">${canOpen ? "Ready to open" : "Need more coins"}</div>
+            <div class="menu-copy">Packs can contain battle cards or biome cards. Rarity controls how often each card appears.</div>
+            <button id="menu-open-pack" class="btn btn-primary menu-action" ${canOpen ? "" : "disabled"}>Open Pack (${cost})</button>
+          </div>
+        </div>
+        <div class="menu-pack-result" id="menu-pack-result">${this.renderPackResultHTML()}</div>
+      </section>
+    `;
+  }
+
+  renderPackResultHTML() {
+    const state = this.getProgressionState();
+    if (!Array.isArray(state.packResults) || !state.packResults.length) {
+      return "Open a pack to reveal cards here.";
+    }
+    return `
+      <div class="pack-result-grid">
+        ${state.packResults.map((reward) => {
+          const def = this.getCardDef(reward.type);
+          const rarity = reward.rarity || this.getCardRarity(reward.type);
+          return `
+            <div class="pack-result-card rarity-${rarity}">
+              <div class="menu-card-symbol ${this.getUnitVisualClass(reward.type)}">${def ? def.symbol : "?"}</div>
+              <strong>${reward.type}</strong>
+              <span>${this.formatRarity(reward.type)} ${reward.duplicate ? "duplicate" : "new card"}</span>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  renderCollectionViewHTML() {
+    const cards = this.getCollectionCardTypes();
+    const classes = Array.from(new Set(cards.map((type) => this.getCardKind(type) === "biome" ? "Biome" : this.getUnitClass(type)))).sort();
+    const costs = Array.from(new Set(cards.map((type) => String((this.getCardDef(type) || {}).cost || 0)))).sort((a, b) => Number(a) - Number(b));
+    const filters = this.collectionFilters || {};
+    const optionHTML = (values, selected, allLabel) => [`<option value="all">${allLabel}</option>`]
+      .concat(values.map(value => `<option value="${value}" ${selected === value ? "selected" : ""}>${String(value).charAt(0).toUpperCase() + String(value).slice(1)}</option>`))
+      .join("");
+    return `
+      <section class="menu-section">
+        <div class="menu-card-toolbar">
+          <input id="menu-card-search" class="menu-search-input" type="search" placeholder="Search cards" value="${String(filters.query || "").replace(/"/g, "&quot;")}">
+          <select id="menu-card-class" class="shop-filter-select">${optionHTML(classes, filters.classValue, "All Classes")}</select>
+          <select id="menu-card-cost" class="shop-filter-select">${optionHTML(costs, filters.costValue, "All Costs")}</select>
+          <select id="menu-card-rarity" class="shop-filter-select">
+            ${optionHTML(["common", "rare", "epic", "legendary"], filters.rarityValue, "All Rarities")}
+          </select>
+          <select id="menu-card-ownership" class="shop-filter-select">
+            <option value="owned" ${filters.ownership === "owned" ? "selected" : ""}>Owned</option>
+            <option value="all" ${filters.ownership === "all" ? "selected" : ""}>All Cards</option>
+            <option value="locked" ${filters.ownership === "locked" ? "selected" : ""}>Locked</option>
+          </select>
+        </div>
+        <div id="menu-collection" class="menu-collection">${this.renderCollectionHTML()}</div>
+      </section>
+    `;
+  }
+
+  renderPvpViewHTML() {
+    const mp = window.Multiplayer;
+    const peerId = mp && mp.getPeerId ? mp.getPeerId() : "Loading...";
+    const connected = mp && mp.isConnected ? mp.isConnected() : false;
+    const canPvp = this.canStartPvpDraft();
+    const shortfall = this.getPvpCardShortfall();
+    return `
+      <section class="menu-section pvp-lobby">
+        <div class="pvp-code-panel">
+          <div class="menu-card-title">Your Player Code</div>
+          <button id="menu-copy-peer-id" class="pvp-code" ${peerId === "Loading..." ? "disabled" : ""}>${peerId}</button>
+        </div>
+        <div class="pvp-join-panel">
+          <div class="menu-card-title">Join Player</div>
+          <div class="pvp-join-row">
+            <input id="menu-join-id-input" class="menu-search-input" type="text" placeholder="Enter player code" ${canPvp ? "" : "disabled"}>
+            <button id="menu-connect-btn" class="btn btn-primary" ${connected || !canPvp ? "disabled" : ""}>${connected ? "Connected" : "Connect"}</button>
+          </div>
+        </div>
+        <div class="menu-pack-result">${canPvp ? (connected ? "Connected. Draft will begin automatically." : "Share your code or enter a code to start a PvP draft.") : `PvP needs at least ${this.minimumPvpCards} owned cards. Open packs or win matches to unlock ${shortfall} more.`}</div>
+      </section>
+    `;
+  }
+
+  renderMainMenu(view) {
+    const overlay = document.getElementById("menu-overlay");
+    if (!overlay) return;
+    this.menuOpen = true;
+    if (view) this.menuView = view;
+    const state = this.getProgressionState();
+    const viewHTML = this.menuView === "collection"
+      ? this.renderCollectionViewHTML()
+      : (this.menuView === "packs" ? this.renderPackViewHTML() : (this.menuView === "pvp" ? this.renderPvpViewHTML() : this.renderMenuHomeHTML()));
+    overlay.innerHTML = `
+      <div class="menu-panel">
+        <div class="menu-hero">
+          <div>
+            <div class="menu-kicker">Card Collection</div>
+            <div class="menu-title">Menu</div>
+            <div class="menu-copy">Spend coins on packs, inspect your cards, and launch a match mode.</div>
+          </div>
+          <div class="menu-resources">
+            <div class="menu-resource">
+              <span>Coins</span>
+              <strong id="menu-coins">${state.coins || 0}</strong>
+            </div>
+            <div class="menu-resource">
+              <span>Cards Owned</span>
+              <strong id="menu-owned-count">${this.getOwnedCardTypes().length}</strong>
+            </div>
+          </div>
+        </div>
+        <div class="menu-tabs">
+          <button class="menu-tab ${this.menuView === "home" ? "active" : ""}" data-menu-view="home">Home</button>
+          <button class="menu-tab ${this.menuView === "packs" ? "active" : ""}" data-menu-view="packs">Packs</button>
+          <button class="menu-tab ${this.menuView === "collection" ? "active" : ""}" data-menu-view="collection">Cards</button>
+          <button class="menu-tab ${this.menuView === "pvp" ? "active" : ""}" data-menu-view="pvp">PvP</button>
+        </div>
+        ${viewHTML}
+      </div>
+    `;
+    overlay.classList.remove("hidden");
+    const vsAiBtn = document.getElementById("menu-vs-ai");
+    const pvpBtn = document.getElementById("menu-pvp");
+    const randomBtn = document.getElementById("menu-random-ai");
+    const packBtn = document.getElementById("menu-open-pack");
+    if (vsAiBtn) vsAiBtn.onclick = () => this.beginFromMenu("ai");
+    if (randomBtn) randomBtn.onclick = () => this.beginFromMenu("ai", { randomizeTeams: true });
+    if (pvpBtn) pvpBtn.onclick = () => this.renderMainMenu("pvp");
+    if (packBtn) packBtn.onclick = () => this.openPackFromMenu();
+    const cardsBtn = document.getElementById("menu-view-cards");
+    if (cardsBtn) cardsBtn.onclick = () => this.renderMainMenu("collection");
+    overlay.querySelectorAll("[data-menu-view]").forEach((btn) => {
+      btn.onclick = () => this.renderMainMenu(btn.dataset.menuView || "home");
+    });
+    this.attachCollectionMenuEvents();
+    this.attachPvpMenuEvents();
+  }
+
+  showMainMenu() {
+    this.renderMainMenu();
+  }
+
+  attachCollectionMenuEvents() {
+    const query = document.getElementById("menu-card-search");
+    const classSelect = document.getElementById("menu-card-class");
+    const costSelect = document.getElementById("menu-card-cost");
+    const raritySelect = document.getElementById("menu-card-rarity");
+    const ownershipSelect = document.getElementById("menu-card-ownership");
+    const update = () => {
+      this.collectionFilters = {
+        query: query ? query.value : "",
+        classValue: classSelect ? classSelect.value : "all",
+        costValue: costSelect ? costSelect.value : "all",
+        rarityValue: raritySelect ? raritySelect.value : "all",
+        ownership: ownershipSelect ? ownershipSelect.value : "owned",
+      };
+      this.renderMainMenu("collection");
+    };
+    if (query) query.oninput = update;
+    if (classSelect) classSelect.onchange = update;
+    if (costSelect) costSelect.onchange = update;
+    if (raritySelect) raritySelect.onchange = update;
+    if (ownershipSelect) ownershipSelect.onchange = update;
+  }
+
+  attachPvpMenuEvents() {
+    const copyBtn = document.getElementById("menu-copy-peer-id");
+    const joinInput = document.getElementById("menu-join-id-input");
+    const connectBtn = document.getElementById("menu-connect-btn");
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        const code = copyBtn.textContent.trim();
+        if (!code || code === "Loading...") return;
+        try {
+          await navigator.clipboard.writeText(code);
+          copyBtn.textContent = "Copied";
+          window.setTimeout(() => this.renderMainMenu("pvp"), 900);
+        } catch {
+          this.logEvent({ type: "error", msg: "Could not copy player code." });
+        }
+      };
+    }
+    if (connectBtn) {
+      connectBtn.onclick = () => {
+        if (!this.canStartPvpDraft()) {
+          this.logEvent({ type: "error", msg: `PvP needs at least ${this.minimumPvpCards} owned cards.` });
+          this.renderMainMenu("pvp");
+          return;
+        }
+        const code = joinInput ? joinInput.value.trim() : "";
+        if (!code) {
+          this.logEvent({ type: "error", msg: "Enter a player code first." });
+          return;
+        }
+        if (window.Multiplayer && window.Multiplayer.connectTo) {
+          window.Multiplayer.connectTo(code);
+          this.renderMainMenu("pvp");
+        }
+      };
+    }
+  }
+
+  hideMainMenu() {
+    const overlay = document.getElementById("menu-overlay");
+    if (overlay) overlay.classList.add("hidden");
+    this.menuOpen = false;
+  }
+
+  beginFromMenu(mode, options) {
+    const opts = options || {};
+    if (mode === "pvp") {
+      this.renderMainMenu("pvp");
+      return;
+    }
+    this.hideMainMenu();
+    this.startDraft(mode, opts);
+  }
+
+  openPackFromMenu() {
+    const state = this.getProgressionState();
+    if (!window.Progression) return;
+    const result = window.Progression.openPack(state);
+    if (!result.success) {
+      this.logEvent({ type: "error", msg: result.reason || "Could not open pack." });
+      this.renderMainMenu("packs");
+      return;
+    }
+    this.progression = state;
+    this.saveProgressionState();
+    const summary = result.rewards.map((reward) => {
+      const def = window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[reward.type];
+      const label = def ? `${def.symbol} ${reward.type}` : reward.type;
+      return `${label}${reward.duplicate ? " (duplicate)" : " (new)"}`;
+    }).join(" • ");
+    state.packResults = result.rewards;
+    this.logEvent({ type: "status", msg: `Pack opened: ${summary}` });
+    this.packOpening = true;
+    this.renderMainMenu("packs");
+    window.setTimeout(() => {
+      this.packOpening = false;
+      if (this.menuOpen && this.menuView === "packs") this.renderMainMenu("packs");
+    }, 760);
+    this.updateHUD();
+  }
+
+  awardVictoryCoins() {
+    if (!window.Progression) return 0;
+    const state = this.getProgressionState();
+    const amount = window.Progression.grantWinCoins(state);
+    this.progression = state;
+    this.saveProgressionState();
+    return amount;
   }
 
   isFriendlyTeam(team) {
@@ -253,6 +701,8 @@ class Game {
       Slicer: "Tank Killer",
       "Bounty Hunter": "High Risk Carry",
       Silencer: "Attack Lockdown",
+      Geomancer: "Board Shifter",
+      Plague: "Contagion Control",
     };
     return roles[type] || "Battle Unit";
   }
@@ -280,6 +730,7 @@ class Game {
       Magnet: "Disruptor",
       Silencer: "Disruptor",
       Sludge: "Disruptor",
+      Plague: "Control",
       // Fighter units
       Avenger: "Fighter",
       Berserker: "Fighter",
@@ -292,6 +743,7 @@ class Game {
       // Support units
       Builder: "Support",
       Cleric: "Support",
+      Geomancer: "Support",
       Skeleton: "Support",
       // Tank units
       Bulwark: "Tank",
@@ -368,9 +820,10 @@ class Game {
         else if (t === "nexus") {
           cell.classList.add("terrain-nexus");
           const owner = this.nexusOwners[r][c];
-          if (owner != null) cell.classList.add(this.isFriendlyTeam(owner) ? "terrain-nexus-player" : "terrain-nexus-ai");
+          if (owner === Config.TEAM.PLAYER) cell.classList.add("terrain-nexus-player");
+          else if (owner === Config.TEAM.AI) cell.classList.add("terrain-nexus-ai");
           const icon = document.createElement("span");
-          icon.className = `nexus-icon ${owner == null ? "nexus-neutral" : (this.isFriendlyTeam(owner) ? "nexus-player" : "nexus-ai")}`;
+          icon.className = `nexus-icon ${owner == null ? "nexus-neutral" : (owner === Config.TEAM.PLAYER ? "nexus-player" : "nexus-ai")}`;
           icon.textContent = "🔷"; // Larger blue diamond shape
           cell.appendChild(icon);
         }
@@ -468,7 +921,7 @@ class Game {
       cell.classList.add(this.isFriendlyTeam(ent.team) ? "unit-player" : "unit-ai");
 
       const span = document.createElement("span");
-      span.className = `token ${this.isFriendlyTeam(ent.team) ? "token-player" : "token-ai"}`;
+      span.className = `token ${this.isFriendlyTeam(ent.team) ? "token-player" : "token-ai"} ${ent.kind === "unit" ? this.getUnitVisualClass(ent.type) : "unit-visual-base"}`;
       span.textContent = this.getDisplayEntitySymbol(ent);
       // Mark and style shadow units when visible
       if (ent.inShadowRealm) {
@@ -524,6 +977,12 @@ class Game {
         cell.appendChild(badge);
         cell.classList.add("status-hex");
     }
+      if (ent.diseased && (ent.diseasedTurns || 0) > 0) {
+        const badge = document.createElement("span");
+        badge.className = "status-badge";
+        badge.textContent = "☣";
+        cell.appendChild(badge);
+      }
       if (ent.stuck) {
         const badge = document.createElement("span");
         badge.className = "status-badge stuck-badge";
@@ -532,6 +991,10 @@ class Game {
         cell.classList.add("status-stuck");
     }
     }
+  }
+
+  getUnitVisualClass(type) {
+    return `unit-visual-${String(type || "unknown").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   }
 
   attachEvents() {
@@ -553,6 +1016,10 @@ class Game {
       const c = Number(target.dataset.col);
 
       if (this.abilityMode && this.abilityMode.def && (this.abilityMode.def.rangePattern || "").toLowerCase() === "select") {
+        const selectedCount = ((this.abilityMode && this.abilityMode.selectedTiles) || []).length;
+        const previewKey = `ability:${this.abilityMode.def.name}:${r},${c}:${selectedCount}`;
+        if (this.hoverPreviewKey === previewKey) return;
+        this.hoverPreviewKey = previewKey;
         this.board.clearMarks();
         const u = this.abilityMode.unit;
         this.board.markSelected(u.row, u.col);
@@ -575,6 +1042,9 @@ class Game {
       } else if (this.biomeSelection) {
         const biomeDef = window.Entities.biomeDefs[this.biomeSelection];
         if (biomeDef) {
+          const previewKey = `biome:${this.biomeSelection}:${r},${c}`;
+          if (this.hoverPreviewKey === previewKey) return;
+          this.hoverPreviewKey = previewKey;
           const radius = biomeDef.radius || 0;
           const area = [];
           for (let dr = -radius; dr <= radius; dr++) {
@@ -603,6 +1073,7 @@ class Game {
       } else {
         // clear preview center when not previewing a biome
         this.previewBiomeCenter = null;
+        this.hoverPreviewKey = "";
       }
     });
 
@@ -667,6 +1138,12 @@ class Game {
       const aNext = this.getUpcomingGoldGain(aTeam);
       if (pEl) pEl.textContent = `${pLabel}: 🪙 ${pValue} (+${pNext} next)`;
       if (aEl) aEl.textContent = `${aLabel}: 🪙 ${aValue} (+${aNext} next)`;
+      const pLossEl = document.getElementById("losses-player");
+      const aLossEl = document.getElementById("losses-ai");
+      const coinsEl = document.getElementById("coins-player");
+      if (pLossEl) pLossEl.textContent = `${pLabel} Losses: ${this.teamDeaths[pTeam] || 0}`;
+      if (aLossEl) aLossEl.textContent = `${aLabel} Losses: ${this.teamDeaths[aTeam] || 0}`;
+      if (coinsEl) coinsEl.textContent = `Coins: ${this.getProgressionState().coins || 0}`;
     }
     const cancelBtn = document.getElementById("cancel-ability-btn");
     if (cancelBtn) {
@@ -707,9 +1184,9 @@ class Game {
       wall: { icon: "🧱", name: "Wall", desc: "A basic wall tile that blocks movement and line paths.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "wall" },
       fortwall: { icon: "⬜", name: "Fortwall", desc: "A reinforced wall built by the Builder. It blocks movement.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "fortwall" },
       bridge: { icon: "🌉", name: "Bridge", desc: "A passable bridge over water created by construction.", notes: [["Movement", "Passable"], ["Builder", "Can revert"]], subtype: "bridge" },
-      forest: { icon: "🌲", name: "Forest", desc: "Dense cover that reduces incoming ranged damage. Assassins hit harder from it.", notes: [["Movement", "Passable"], ["Cover", "-10 ranged damage"], ["Assassin", "+10 damage from forest"], ["Builder", "Can clear"]], subtype: "forest" },
-      ruins: { icon: "▥", name: "Ruins", desc: "Broken high ground. Marksmen attack harder from ruins and tanks take less damage on them.", notes: [["Movement", "Passable"], ["Marksman", "+10 damage from ruins"], ["Tank", "-10 damage while standing here"]], subtype: "ruins" },
-      nexus: { icon: "💠", name: "Nexus", desc: "Standing here captures the nexus for your team and helps units level up.", notes: [["Effect", "Capture point"], ["Bonus", "Grants XP"]], subtype: "nexus" },
+      forest: { icon: "🌲", name: "Forest", desc: "Dense cover that reduces incoming ranged damage.", notes: [["Movement", "Passable"], ["Cover", "-10 ranged damage"], ["Builder", "Can clear"]], subtype: "forest" },
+      ruins: { icon: "▥", name: "Ruins", desc: "Broken high ground that boosts marksman attacks.", notes: [["Movement", "Passable"], ["Marksman", "+10 damage from ruins"]], subtype: "ruins" },
+      nexus: { icon: "💠", name: "Nexus", desc: "Standing here captures the nexus for your team.", notes: [["Effect", "Capture point"]], subtype: "nexus" },
       grass: { icon: "🟩", name: "Open Ground", desc: "Open ground with no special effect.", notes: [["Movement", "Passable"], ["Effect", "None"]], subtype: "grass" }
     };
     const base = terrainInfo[terrain || "grass"] || terrainInfo.grass;
@@ -792,48 +1269,6 @@ class Game {
     setTimeout(() => document.addEventListener("click", onDocClick, true), 0);
   }
 
-  getUnitLevelingProfile(unitOrType) {
-    const type = typeof unitOrType === "string" ? unitOrType : unitOrType && unitOrType.type;
-    if (!window.Entities || !window.Entities.getLevelingProfile) {
-      return {
-        xpToLevel: { 2: 6, 3: 12 },
-        levels: { 2: [], 3: [] },
-      };
-    }
-    const profile = window.Entities.getLevelingProfile(type);
-    if (profile == null) return null;
-    return profile || {
-      xpToLevel: { 2: 6, 3: 12 },
-      levels: { 2: [], 3: [] },
-    };
-  }
-
-  getLevelXpFor(unitOrType, level) {
-    const profile = this.getUnitLevelingProfile(unitOrType);
-    return (profile && profile.xpToLevel && profile.xpToLevel[level]) || null;
-  }
-
-  getLevelUpLabels(unitOrType, level) {
-    const profile = this.getUnitLevelingProfile(unitOrType);
-    if (!profile) return [];
-    const bonuses = (profile.levels && profile.levels[level]) || [];
-    return bonuses.map(b => b.label).filter(Boolean);
-  }
-
-  formatLevelBonusLabel(label) {
-    if (!label) return "";
-    const cooldownMatch = label.match(/cooldown\s*([+-]?\d+)/i);
-    if (cooldownMatch) return `CD ${cooldownMatch[1]}`;
-    const plusMatch = label.match(/^\+(\d+)\s+(.+)$/);
-    if (plusMatch) {
-      const amount = plusMatch[1];
-      let stat = plusMatch[2].replace(/^Max\s+/i, "").replace(/^Attack\s+/i, "");
-      if (/^HP$/i.test(stat) || /HP$/i.test(stat)) stat = "HP";
-      return `${stat} +${amount}`;
-    }
-    return label;
-  }
-
   getUnitStatusEntries(unit) {
     if (!unit || unit.kind !== "unit") return [];
     const statuses = [];
@@ -853,26 +1288,31 @@ class Game {
     }
     if (unit.siegeTurns && unit.siegeTurns > 0) push("Sieged", unit.siegeTurns);
     if (unit.burnTurns && unit.burnTurns > 0) push("Burning", unit.burnTurns);
+    if (unit.diseased && (unit.diseasedTurns || 0) > 0) push("Diseased", unit.diseasedTurns);
     if (unit.stunnedTurns && unit.stunnedTurns > 0) push("Stunned", unit.stunnedTurns);
     if (unit.silencedTurns && unit.silencedTurns > 0) push("Silenced", unit.silencedTurns);
     if ((unit.apMaxBonus || 0) > 0) statuses.push(`Sanctified (+${unit.apMaxBonus} AP Max)`);
+    const runeRegen = this.getRuneTurnStartHeal(unit);
+    if (runeRegen > 0) statuses.push(`Regenerating (+${runeRegen} HP/turn)`);
+    if (unit.type === "Avenger") {
+      const pendingDeaths = this.getAvengerPendingDeaths(unit);
+      if (pendingDeaths > 0) statuses.push(`Vengeance Ready (+${pendingDeaths * 10} dmg, +${pendingDeaths * 10} HP)`);
+      statuses.push(`Fallen Allies (${(this.teamDeaths && this.teamDeaths[unit.team]) || 0})`);
+    }
+    if (unit.abilityCooldowns) {
+      for (const [abilityName, turns] of Object.entries(unit.abilityCooldowns)) {
+        if ((turns || 0) > 0) statuses.push(`${abilityName} CD (${turns})`);
+      }
+    }
     if (unit.stuck) {
       const hazard = this.hazards && this.hazards[unit.row] && this.hazards[unit.row][unit.col];
       const turns = hazard && hazard.kind === "sludge" ? hazard.turns : 0;
       statuses.push(turns > 0 ? `Trapped (${turns})` : `Trapped (Mire)`);
     }
     const terrain = this.terrain && this.terrain[unit.row] && this.terrain[unit.row][unit.col];
-    if (terrain === "forest") {
-      const forestText = this.getUnitClassFor(unit) === "Assassin"
-        ? "Forest Cover (-10 ranged dmg, +10 attack)"
-        : "Forest Cover (-10 ranged dmg)";
-      statuses.push(forestText);
-    }
+    if (terrain === "forest") statuses.push("Forest Cover (-10 ranged dmg)");
     if (terrain === "ruins") {
-      const ruinBits = [];
-      if (this.getUnitClassFor(unit) === "Marksman") ruinBits.push("+10 attack");
-      if (this.getUnitClassFor(unit) === "Tank") ruinBits.push("-10 damage taken");
-      statuses.push(ruinBits.length ? `Ruins (${ruinBits.join(", ")})` : "Ruins (high ground)");
+      statuses.push(this.getUnitClassFor(unit) === "Marksman" ? "Ruins (+10 attack)" : "Ruins");
     }
     return statuses;
   }
@@ -929,8 +1369,6 @@ class Game {
       maxLevel: this.getRuneMaxLevel(runeDef),
       name: firstStage.name,
       desc: firstStage.desc,
-      turnsUntilNext: Number(firstStage.turnsToNext || 0),
-      turnsElapsed: 0,
     };
   }
 
@@ -942,45 +1380,99 @@ class Game {
     ownedRune.maxLevel = this.getRuneMaxLevel(runeDef);
     ownedRune.name = stage && stage.name ? stage.name : (ownedRune.name || runeDef.baseName || "Rune");
     ownedRune.desc = stage && stage.desc ? stage.desc : (ownedRune.desc || "");
-    ownedRune.turnsUntilNext = stage && stage.turnsToNext ? Number(stage.turnsToNext) : 0;
-    if (ownedRune.turnsElapsed == null) ownedRune.turnsElapsed = 0;
     return ownedRune;
   }
 
   getRuneProgressLabel(ownedRune) {
-    if (!ownedRune) return "";
-    const maxLevel = Math.max(1, Number(ownedRune.maxLevel || 1));
-    const level = Math.max(1, Number(ownedRune.level || 1));
-    if (level >= maxLevel || !ownedRune.turnsUntilNext) return "Maxed";
-    const left = Math.max(0, Number(ownedRune.turnsUntilNext || 0) - Number(ownedRune.turnsElapsed || 0));
-    return left <= 1 ? "Evolves next turn" : `Evolves in ${left} turns`;
+    return ownedRune ? "Active" : "";
   }
 
-  advanceRuneProgressForTeam(team) {
-    const teamLabel = this.isMultiplayer
-      ? (team === this.playerTeam ? "Your" : "Enemy")
-      : (team === Config.TEAM.PLAYER ? "Player" : "AI");
+  getActiveRuneStage(unit, rune) {
+    if (!unit || !rune) return null;
+    const runeDef = this.getRuneDefById(rune.id);
+    if (!runeDef) return null;
+    return this.getRuneStage(runeDef, rune.level || 1);
+  }
+
+  getRuneTurnStartHeal(unit) {
+    if (!unit || !Array.isArray(unit.runes)) return 0;
+    let total = 0;
+    for (const rune of unit.runes) {
+      const stage = this.getActiveRuneStage(unit, rune);
+      total += Number((stage && stage.healPerTurn) || 0);
+    }
+    return total;
+  }
+
+  applyRuneTurnStartEffectsForTeam(team) {
     for (const unit of this.entities) {
       if (!unit || unit.kind !== "unit" || unit.team !== team || !Array.isArray(unit.runes)) continue;
+      let healed = false;
       for (const ownedRune of unit.runes) {
-        const runeDef = this.getRuneDefById(ownedRune.id);
-        if (!runeDef) continue;
-        this.syncOwnedRunePresentation(ownedRune, runeDef);
-        if ((ownedRune.level || 1) >= (ownedRune.maxLevel || 1) || !ownedRune.turnsUntilNext) continue;
-        ownedRune.turnsElapsed = Number(ownedRune.turnsElapsed || 0) + 1;
-        if (ownedRune.turnsElapsed < ownedRune.turnsUntilNext) continue;
-        const nextLevel = Math.min((ownedRune.level || 1) + 1, ownedRune.maxLevel || 1);
-        const stage = this.getRuneStage(runeDef, nextLevel);
-        if (!stage) continue;
-        stage.apply(unit);
-        ownedRune.level = nextLevel;
-        ownedRune.turnsElapsed = 0;
-        this.syncOwnedRunePresentation(ownedRune, runeDef);
-        if (unit.hp > unit.maxHp) unit.hp = unit.maxHp;
-        this.logEvent({ type: "status", msg: `${teamLabel} ${unit.type}'s ${ownedRune.name} awakened.` });
+        const stage = this.getActiveRuneStage(unit, ownedRune);
+        if (!stage || typeof stage.onTurnStart !== "function") continue;
+        const beforeHp = unit.hp;
+        stage.onTurnStart(unit, this);
+        healed = healed || unit.hp > beforeHp;
+      }
+      if (healed) {
+        const cell = this.board.getCell(unit.row, unit.col);
+        if (cell) {
+          cell.classList.add("heal-anim");
+          setTimeout(() => cell.classList.remove("heal-anim"), 640);
+        }
       }
     }
   }
+
+  getAvengerPendingDeaths(unit) {
+    if (!unit || unit.type !== "Avenger") return 0;
+    const total = (this.teamDeaths && this.teamDeaths[unit.team]) || 0;
+    return Math.max(0, total - Number(unit.avengerConsumedDeaths || 0));
+  }
+
+  infectUnit(unit, duration, sourceTeam) {
+    if (!unit || unit.kind !== "unit" || unit.hp <= 0) return false;
+    unit.diseased = true;
+    unit.diseasedTurns = Math.max(Number(unit.diseasedTurns || 0), Number(duration || 0));
+    if (sourceTeam) unit.diseaseSourceTeam = sourceTeam;
+    return true;
+  }
+
+  spreadDiseaseFromUnit(unit, duration) {
+    if (!unit || unit.kind !== "unit") return 0;
+    let spreadCount = 0;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const r = unit.row + dr;
+        const c = unit.col + dc;
+        if (!this.inBounds(r, c)) continue;
+        const occ = this.occupants[r][c];
+        if (!occ || occ.kind !== "unit" || occ.hp <= 0) continue;
+        if (this.infectUnit(occ, duration, unit.diseaseSourceTeam || unit.team)) spreadCount++;
+      }
+    }
+    return spreadCount;
+  }
+
+  applyDiseaseEffectsForTeam(team) {
+    const diseased = this.entities.filter(ent => ent && ent.kind === "unit" && ent.team === team && ent.diseased && (ent.diseasedTurns || 0) > 0);
+    if (!diseased.length) return;
+    for (const unit of diseased) this.spreadDiseaseFromUnit(unit, 2);
+    for (const unit of diseased) {
+      if (!this.entities.includes(unit)) continue;
+      this.applyDamage(unit, 10, null);
+      if (!this.entities.includes(unit)) continue;
+      unit.diseasedTurns = Math.max(0, (unit.diseasedTurns || 0) - 1);
+      if (unit.diseasedTurns <= 0) {
+        unit.diseased = false;
+        unit.diseaseSourceTeam = null;
+      }
+    }
+  }
+
+  advanceRuneProgressForTeam(team) {}
 
   updateUnitPanel(ent) {
     const iconEl = document.getElementById("unit-icon");
@@ -994,6 +1486,7 @@ class Game {
 
     if (!iconEl || !nameEl || !descEl || !statsEl) return;
     statsEl.innerHTML = "";
+    iconEl.className = "unit-icon";
     if (showAbBtn) showAbBtn.style.display = "none";
     this.hideRuneDetails();
 
@@ -1007,7 +1500,7 @@ class Game {
     if (!ent) {
       iconEl.textContent = "—";
       nameEl.textContent = "None selected";
-      descEl.textContent = "Select a tile or unit to view details.";
+      descEl.textContent = "Select a tile or card to view details.";
       this.hideRuneDetails();
       return;
     }
@@ -1038,6 +1531,7 @@ class Game {
 
     if (ent.kind === "base") {
       iconEl.textContent = this.getDisplayEntitySymbol(ent);
+      iconEl.className = "unit-icon unit-visual-base";
       const teamName = this.isMultiplayer ? (ent.team === this.playerTeam ? "Your" : "Enemy") : (ent.team === Config.TEAM.PLAYER ? "Player" : "AI");
       nameEl.textContent = `${teamName} Base`;
       descEl.textContent = ent.team === this.playerTeam ? "Your base. If its HP reaches 0, you lose." : "Enemy base. Destroy it to win!";
@@ -1050,6 +1544,7 @@ class Game {
 
     const def = Entities.unitDefs[ent.type];
     iconEl.textContent = this.getDisplayEntitySymbol(ent);
+    iconEl.className = `unit-icon ${ent.kind === "unit" ? this.getUnitVisualClass(ent.type) : "unit-visual-base"}`;
     const teamName = this.isMultiplayer ? (ent.team === this.playerTeam ? "Your" : "Enemy") : (ent.team === Config.TEAM.PLAYER ? "Player" : "AI");
     nameEl.textContent = `${teamName} ${ent.type}`;
     descEl.textContent = def.ability;
@@ -1059,63 +1554,9 @@ class Game {
       if (!def) {
         iconEl.textContent = "—";
         nameEl.textContent = "Error";
-        descEl.textContent = "Unit data missing.";
+        descEl.textContent = "Card data missing.";
         return;
       }
-
-      const profile = this.getUnitLevelingProfile(ent);
-      const currentLevel = Math.max(1, Math.min(3, ent.level || 1));
-      const currentXp = ent.exp || 0;
-      const nextLevel = currentLevel < 3 ? currentLevel + 1 : 3;
-      const nextLevelXp = currentLevel < 3 ? this.getLevelXpFor(ent, nextLevel) : null;
-      const prevLevelXp = currentLevel > 1 ? this.getLevelXpFor(ent, currentLevel) : 0;
-      const progressStart = currentLevel > 1 ? (prevLevelXp || 0) : 0;
-      const progressEnd = nextLevelXp || progressStart || 1;
-      const progressPct = currentLevel >= 3 ? 100 : Math.max(0, Math.min(100, ((currentXp - progressStart) / Math.max(1, progressEnd - progressStart)) * 100));
-      const nextReward = currentLevel >= 3 ? "Fully upgraded" : `Next: Lv${nextLevel}`;
-      const levelCards = [2, 3].map((level) => {
-        const reached = currentLevel >= level;
-        const xp = this.getLevelXpFor(ent, level);
-        const labels = this.getLevelUpLabels(ent, level);
-        const buffPills = labels.length
-          ? labels.map(label => `<span class="level-buff-pill">${this.formatLevelBonusLabel(label)}</span>`).join("")
-          : `<span class="level-buff-pill muted">No buffs</span>`;
-        return `
-          <div class="level-branch${reached ? " reached" : ""}">
-            <div class="level-branch-head">
-              <span class="level-chip">Lv${level}</span>
-              <span class="level-xp-tag">${xp != null ? `${xp} XP` : "Max"}</span>
-            </div>
-            <div class="level-branch-body">${buffPills}</div>
-          </div>
-        `;
-      }).join("");
-
-      const levelingWrap = document.createElement("div");
-      levelingWrap.className = "details-section detail-dynamic";
-      const levelingLabel = document.createElement("div");
-      levelingLabel.className = "section-label";
-      levelingLabel.textContent = "Level";
-      const levelingPanel = document.createElement("div");
-      levelingPanel.className = "leveling-panel";
-      levelingPanel.innerHTML = `
-        <div class="leveling-header">
-          <span class="level-chip">Level ${currentLevel}</span>
-          <span class="level-reward">${nextReward}</span>
-        </div>
-        <div class="leveling-progress-wrap">
-          <div class="leveling-progress-bar"><div class="leveling-progress-fill" style="width:${progressPct}%"></div></div>
-          <div class="leveling-progress-meta">${currentLevel >= 3 ? "XP MAXED" : `XP ${currentXp}/${nextLevelXp}`}</div>
-        </div>
-        <div class="leveling-track">
-          <div class="level-step${currentLevel >= 1 ? " reached" : ""}">Lv1</div>
-          <div class="level-step${currentLevel >= 2 ? " reached" : ""}">Lv2</div>
-          <div class="level-step${currentLevel >= 3 ? " reached" : ""}">Lv3</div>
-        </div>
-        <div class="level-branch-grid">${levelCards}</div>
-      `;
-      levelingWrap.appendChild(levelingLabel);
-      levelingWrap.appendChild(levelingPanel);
 
       // Stats
       const base = Entities.unitDefs[ent.type] || {};
@@ -1210,9 +1651,8 @@ class Game {
           slot.onfocus = () => this.showRuneDetails(rune, slot);
           slot.onclick = (e) => { e.stopPropagation(); this.showRuneDetails(rune, slot); };
         } else {
-          const unlockLevel = i + 1;
           const myTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
-          const canUse = (ent.level || 1) >= unlockLevel && ent.team === myTeam;
+          const canUse = ent.team === myTeam;
           if (canUse) {
             slot.className = "rune-slot empty";
             slot.textContent = "+";
@@ -1234,7 +1674,7 @@ class Game {
               <div class="rune-summary-head">
                 <span class="rune-summary-name">${rune.name}</span>
               </div>
-              <div class="rune-summary-meta">${this.getRuneProgressLabel(rune)}</div>
+              <div class="rune-summary-meta">${rune.desc || ""}</div>
             </div>
           `;
         }).join("");
@@ -1245,7 +1685,6 @@ class Game {
       runePanel.appendChild(runeSummary);
       runeWrap.appendChild(runeLabel);
       runeWrap.appendChild(runePanel);
-      unitPanel.appendChild(levelingWrap);
       unitPanel.appendChild(runeWrap);
 
       // Abilities Button
@@ -1338,6 +1777,7 @@ class Game {
   }
 
   openRuneShop(unit) {
+    if (!unit || unit.kind !== "unit" || !this.entities.includes(unit)) return;
     this.hideRuneDetails();
     let shop = document.getElementById("rune-shop");
     if (!shop) {
@@ -1355,11 +1795,6 @@ class Game {
     title.textContent = "Runes";
     panel.appendChild(title);
 
-    const shopIntro = document.createElement("div");
-    shopIntro.className = "rune-shop-intro";
-    shopIntro.textContent = "Runes evolve on their own over your unit's turns. Higher-tier runes stop at Lv2, lighter runes can grow to Lv3.";
-    panel.appendChild(shopIntro);
-
     const list = document.createElement("div");
     list.className = "rune-list";
     
@@ -1367,22 +1802,21 @@ class Game {
     window.RuneDefs.forEach(def => {
       const owned = unit.runes.find(r => r.id === def.id);
       if (owned) this.syncOwnedRunePresentation(owned, def);
-      const canBuyFresh = unit.runes.length < Math.min(3, unit.level || 1);
+      const canBuyFresh = unit.runes.length < 3;
       const canAct = !owned && canBuyFresh;
       const firstStage = this.getRuneStage(def, 1) || {};
       const item = document.createElement("div");
       item.className = "rune-item";
       const stageNotes = (def.stages || []).map((stage) => {
         const timer = stage.turnsToNext ? ` • ${stage.turnsToNext} turns to next` : "";
-        return `Lv${stage.level}: ${stage.desc}${timer}`;
+        return `${stage.desc}${timer}`;
       }).join(" · ");
       item.innerHTML = `
         <div class="rune-info">
           <div class="rune-name">${(owned ? owned.name : firstStage.name) || def.baseName}</div>
           <div class="rune-desc">${(owned ? owned.desc : firstStage.desc) || ""}</div>
-          <div class="rune-path">${stageNotes}</div>
         </div>
-        <button class="btn btn-sm">${owned ? this.getRuneProgressLabel(owned) : `Buy (${def.cost})`}</button>
+        <button class="btn btn-sm">${owned ? "Owned" : `Buy (${def.cost})`}</button>
       `;
       const btn = item.querySelector("button");
       if (!canAct || this.energy[myTeam] < def.cost) {
@@ -1458,6 +1892,82 @@ class Game {
       }
     }
     return res;
+  }
+
+  getAreaTiles(centerR, centerC, radius) {
+    const tiles = [];
+    for (let dr = -radius; dr <= radius; dr++) {
+      for (let dc = -radius; dc <= radius; dc++) {
+        const r = centerR + dr;
+        const c = centerC + dc;
+        if (!this.inBounds(r, c)) return [];
+        tiles.push([r, c]);
+      }
+    }
+    return tiles;
+  }
+
+  areasOverlap(centerA, centerB, radius) {
+    return Math.abs(centerA[0] - centerB[0]) <= radius * 2 && Math.abs(centerA[1] - centerB[1]) <= radius * 2;
+  }
+
+  swapBoardAreas(centerA, centerB, radius) {
+    const tilesA = this.getAreaTiles(centerA[0], centerA[1], radius);
+    const tilesB = this.getAreaTiles(centerB[0], centerB[1], radius);
+    if (!tilesA.length || !tilesB.length || this.areasOverlap(centerA, centerB, radius)) return false;
+    const snapA = tilesA.map(([r, c]) => ({
+      terrain: this.terrain[r][c],
+      hazard: this.hazards[r][c],
+      constructionSite: this.constructionSites[r][c],
+      nexusOwner: this.nexusOwners[r][c],
+      occupant: this.occupants[r][c],
+    }));
+    const snapB = tilesB.map(([r, c]) => ({
+      terrain: this.terrain[r][c],
+      hazard: this.hazards[r][c],
+      constructionSite: this.constructionSites[r][c],
+      nexusOwner: this.nexusOwners[r][c],
+      occupant: this.occupants[r][c],
+    }));
+    for (let i = 0; i < tilesA.length; i++) {
+      const [ar, ac] = tilesA[i];
+      const [br, bc] = tilesB[i];
+      const fromB = snapB[i];
+      const fromA = snapA[i];
+      this.terrain[ar][ac] = fromB.terrain;
+      this.hazards[ar][ac] = fromB.hazard;
+      this.constructionSites[ar][ac] = fromB.constructionSite;
+      this.nexusOwners[ar][ac] = fromB.nexusOwner;
+      this.occupants[ar][ac] = fromB.occupant;
+      if (fromB.occupant) {
+        fromB.occupant.row = ar;
+        fromB.occupant.col = ac;
+      }
+
+      this.terrain[br][bc] = fromA.terrain;
+      this.hazards[br][bc] = fromA.hazard;
+      this.constructionSites[br][bc] = fromA.constructionSite;
+      this.nexusOwners[br][bc] = fromA.nexusOwner;
+      this.occupants[br][bc] = fromA.occupant;
+      if (fromA.occupant) {
+        fromA.occupant.row = br;
+        fromA.occupant.col = bc;
+      }
+    }
+    for (const biome of this.biomes) {
+      const inA = Math.abs(biome.r - centerA[0]) <= radius && Math.abs(biome.c - centerA[1]) <= radius;
+      const inB = Math.abs(biome.r - centerB[0]) <= radius && Math.abs(biome.c - centerB[1]) <= radius;
+      if (inA) {
+        biome.r = centerB[0] + (biome.r - centerA[0]);
+        biome.c = centerB[1] + (biome.c - centerA[1]);
+      } else if (inB) {
+        biome.r = centerA[0] + (biome.r - centerB[0]);
+        biome.c = centerA[1] + (biome.c - centerB[1]);
+      }
+    }
+    this.syncSludgeStatuses();
+    this.renderEntities();
+    return true;
   }
 
   getBiomeStatBonus(unit, stat) {
@@ -1718,7 +2228,7 @@ class Game {
     const isMyTurn = this.isMultiplayer ? (this.turn === this.playerTeam) : isPlayerTurn;
     if (this.isGameOver()) return;
     if (!this.draft.completed) {
-      if (!this.draft.active) this.showDraftModeSelect();
+      if (!this.draft.active && this.menuOpen) this.renderMainMenu();
       return;
     }
 
@@ -2045,7 +2555,6 @@ class Game {
       const prev = this.nexusOwners[r][c];
       if (prev !== unit.team) {
         this.nexusOwners[r][c] = unit.team;
-        this.awardExp(unit, 3, null);
       }
     }
     this.refreshBiomeModifiersForUnit(unit, { grantTurnStart: false, grantImmediateContact: true });
@@ -2104,7 +2613,9 @@ class Game {
   async animateMove(unit, path, options) {
     const delay = (options && options.stepDelay) || 360;
     for (const [r, c] of path) {
+      const from = { row: unit.row, col: unit.col };
       this.moveUnit(unit, r, c, { dash: !!(options && options.dash) });
+      this.spawnMoveFx(from, { row: r, col: c }, !!(options && options.dash));
       this.playSfx && this.playSfx(options && options.dash ? "dash" : "move");
       this.renderEntities();
       this.board.clearMarks();
@@ -2282,6 +2793,8 @@ class Game {
     this.tickHazardsForTeam(team);
     this.tickBiomes(team);
     this.applyHazardsForTeam(team);
+    this.applyRuneTurnStartEffectsForTeam(team);
+    this.applyDiseaseEffectsForTeam(team);
     this.tickCooldowns(team);
     this.advanceRuneProgressForTeam(team);
     this.renderEntities();
@@ -2315,7 +2828,6 @@ class Game {
     }
     const before = target.hp;
     const bonus = (target.hexMarked ? 10 : 0);
-    const abilityBonus = (source && source.kind === "unit" && this.abilityMode && this.abilityMode.unit === source) ? ((source.level || 1) - 1) : 0;
     
     // Biome buffs for source
     let biomeDmgBonus = 0;
@@ -2335,17 +2847,14 @@ class Game {
       }
     }
 
-    let effectiveDmg = dmg + bonus + abilityBonus + biomeDmgBonus;
+    let effectiveDmg = dmg + bonus + biomeDmgBonus;
     if (source && source.kind === "unit" && target && target.kind === "unit") {
       const sourceTerrain = this.terrain[source.row] && this.terrain[source.row][source.col];
       const targetTerrain = this.terrain[target.row] && this.terrain[target.row][target.col];
       const sourceClass = this.getUnitClassFor(source);
-      const targetClass = this.getUnitClassFor(target);
       const dist = Math.max(Math.abs(source.row - target.row), Math.abs(source.col - target.col));
-      if (sourceTerrain === "forest" && sourceClass === "Assassin") effectiveDmg += 10;
       if (sourceTerrain === "ruins" && sourceClass === "Marksman") effectiveDmg += 10;
-      if (targetTerrain === "forest" && dist > 1 && sourceClass !== "Assassin") effectiveDmg = Math.max(1, effectiveDmg - 10);
-      if (targetTerrain === "ruins" && targetClass === "Tank") effectiveDmg = Math.max(1, effectiveDmg - 10);
+      if (targetTerrain === "forest" && dist > 1) effectiveDmg = Math.max(1, effectiveDmg - 10);
     }
     if (target.kind === "unit" && (target.guardTurns || 0) > 0) {
       const gv = (target.guardValue != null && target.guardValue !== 0) ? target.guardValue : 10;
@@ -2368,21 +2877,11 @@ class Game {
       this.checkWin();
     }
     this.playSfx && this.playSfx("hit");
-    if (source && source.kind === "unit") {
-      let gain = Math.max(0, before - target.hp);
-      if (target.kind === "unit") {
-        const levelDiff = (source.level || 1) - (target.level || 1);
-        const factor = Math.max(0.5, 1 - 0.2 * levelDiff);
-        gain = Math.floor(gain * factor);
-      }
-      this.awardExp(source, gain, target);
-    }
     if (target.hp === 0 && before > 0) {
       if (target.kind === "unit") {
         const killer = source ? `${source.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${source.type}` : "Unknown";
         const victim = `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.type}`;
         this.logEvent({ type: "death", killer, victim });
-        if (source && source.kind === "unit") this.awardExp(source, 4, target);
         const bountyReward = (window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[target.type] && window.Entities.unitDefs[target.type].bountyEnergyReward) || target.bountyEnergyReward || 0;
         if (bountyReward > 0) {
           const rewardTeam = target.team === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER;
@@ -2390,7 +2889,6 @@ class Game {
           this.logEvent({ type: "status", msg: `${rewardTeam === Config.TEAM.PLAYER ? "Player" : "AI"} gained ${bountyReward} gold from the bounty.` });
           this.updateHUD();
         }
-        this.teamDeaths = this.teamDeaths || { [Config.TEAM.PLAYER]: 0, [Config.TEAM.AI]: 0 };
         this.teamDeaths[target.team] = (this.teamDeaths[target.team] || 0) + 1;
         this.entities = this.entities.filter(e => e !== target);
         this.occupants[target.row][target.col] = null;
@@ -2430,7 +2928,7 @@ class Game {
   async endPlayerTurn() {
     if (!this.draft.completed) {
       this.logEvent({ type: "error", msg: "Complete the draft before starting turns." });
-      if (!this.draft.active) this.showDraftModeSelect();
+      if (!this.draft.active && this.menuOpen) this.renderMainMenu();
       return;
     }
     const isMyTurn = this.isMultiplayer ? (this.turn === this.playerTeam) : (this.turn === Config.TEAM.PLAYER);
@@ -2523,7 +3021,8 @@ class Game {
       // Per-unit realm-aware enemy list and focus
       const foes = playerUnits.filter(p => ((!!p.inShadowRealm) === (!!u.inShadowRealm)));
       const focus = foes.length ? foes.slice().sort((a, b) => a.hp - b.hp)[0] : playerBase;
-      while (u.ap > 0) {
+      let aiActionGuard = 0;
+      while (u.ap > 0 && aiActionGuard++ < 12) {
         const healTargets = this.getHealTargets(u);
         if (u.type === "Druid" && ((u.abilityCooldowns["Shapeshift"] || 0) === 0) && !u.isBeast) {
           const def = this.getAbilityDefForUnit(u);
@@ -2589,7 +3088,7 @@ class Game {
             }
           }
         }
-        if (u.type === "Avenger" && ((u.abilityCooldowns["Vengeance"] || 0) === 0) && ((this.teamDeaths && this.teamDeaths[u.team]) || 0) > 0) {
+        if (u.type === "Avenger" && ((u.abilityCooldowns["Vengeance"] || 0) === 0) && this.getAvengerPendingDeaths(u) > 0) {
           const def = this.getAbilityDefForUnit(u);
           if (def) {
             def.perform(this, u);
@@ -3002,6 +3501,75 @@ class Game {
             }
           }
         }
+        if (u.type === "Plague" && ((u.abilityCooldowns["Infect"] || 0) === 0)) {
+          const def = this.getAbilityDefForUnit(u);
+          const targets = def ? def.computeTargets(this, u) : [];
+          const scored = targets.map(([r, c]) => {
+            const target = this.occupants[r][c];
+            if (!target || target.team === u.team) return null;
+            let cluster = 0;
+            for (let dr = -1; dr <= 1; dr++) {
+              for (let dc = -1; dc <= 1; dc++) {
+                if (dr === 0 && dc === 0) continue;
+                const rr = r + dr;
+                const cc = c + dc;
+                if (!this.inBounds(rr, cc)) continue;
+                const occ = this.occupants[rr][cc];
+                if (occ && occ.team !== u.team) cluster++;
+              }
+            }
+            return { r, c, score: cluster + (target.diseased ? -3 : 2) + ((target.hp || 0) <= 20 ? 1 : 0) };
+          }).filter(Boolean).sort((a, b) => b.score - a.score);
+          if (def && scored.length && scored[0].score > 0) {
+            def.perform(this, u, scored[0].r, scored[0].c);
+            this.animateAbilityCast(u, def, scored[0].r, scored[0].c);
+            await this.delay(320);
+            continue;
+          }
+        }
+        if (u.type === "Geomancer" && ((u.abilityCooldowns["Reshape"] || 0) === 0)) {
+          const def = this.getAbilityDefForUnit(u);
+          const targets = def ? def.computeTargets(this, u) : [];
+          const aiBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.AI);
+          const playerBaseRef = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.PLAYER);
+          let bestPair = null;
+          let bestScore = -Infinity;
+          for (let i = 0; i < targets.length; i++) {
+            for (let j = i + 1; j < targets.length; j++) {
+              const a = targets[i];
+              const b = targets[j];
+              if (this.areasOverlap(a, b, 1)) continue;
+              let score = 0;
+              for (const [from, to] of [[a, b], [b, a]]) {
+                const fromTiles = this.getAreaTiles(from[0], from[1], 1);
+                const toTiles = this.getAreaTiles(to[0], to[1], 1);
+                for (let k = 0; k < fromTiles.length; k++) {
+                  const [fr, fc] = fromTiles[k];
+                  const [tr, tc] = toTiles[k];
+                  const occ = this.occupants[fr][fc];
+                  if (!occ || occ.kind !== "unit") continue;
+                  if (occ.team === Config.TEAM.AI) {
+                    score += Math.abs(playerBaseRef.row - fr) + Math.abs(playerBaseRef.col - fc);
+                    score -= Math.abs(playerBaseRef.row - tr) + Math.abs(playerBaseRef.col - tc);
+                  } else {
+                    score += Math.abs(aiBase.row - tr) + Math.abs(aiBase.col - tc);
+                    score -= Math.abs(aiBase.row - fr) + Math.abs(aiBase.col - fc);
+                  }
+                }
+              }
+              if (score > bestScore) {
+                bestScore = score;
+                bestPair = [a, b];
+              }
+            }
+          }
+          if (def && bestPair && bestScore > 3) {
+            def.performSelected(this, u, bestPair);
+            this.animateAbilityCast(u, def, bestPair[0][0], bestPair[0][1]);
+            await this.delay(360);
+            continue;
+          }
+        }
         const attackables = this.getAttackTargets(u)
           .map(([r, c]) => this.occupants[r][c])
           .filter(Boolean);
@@ -3057,6 +3625,10 @@ class Game {
           continue;
         }
         break;
+      }
+      if (aiActionGuard >= 12 && u.ap > 0) {
+        u.ap = 0;
+        this.logEvent({ type: "status", msg: `AI skipped ${u.type} after too many actions.` });
       }
     }
     this.renderEntities();
@@ -3115,15 +3687,30 @@ class Game {
   }
 
   checkWin() {
+    if (this.matchResolved) return;
     const pBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.PLAYER);
     const aBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.AI);
     if (pBase.hp <= 0) {
-      const winner = this.isMultiplayer ? (this.playerTeam === Config.TEAM.AI ? "YOU WIN!" : "ENEMY WINS!") : "AI WINS!";
-      this.showOverlay(`${winner} The player base was destroyed.`);
+      this.matchResolved = true;
+      const localWon = this.isMultiplayer ? this.playerTeam === Config.TEAM.AI : false;
+      const winner = this.isMultiplayer ? (localWon ? "YOU WIN!" : "ENEMY WINS!") : "AI WINS!";
+      if (localWon) {
+        const reward = this.awardVictoryCoins();
+        this.showOverlay(`${winner} The player base was destroyed. +${reward} coins earned.`);
+      } else {
+        this.showOverlay(`${winner} The player base was destroyed.`);
+      }
       this.logEvent({ type: "status", msg: winner });
     } else if (aBase.hp <= 0) {
-      const winner = this.isMultiplayer ? (this.playerTeam === Config.TEAM.PLAYER ? "YOU WIN!" : "ENEMY WINS!") : "PLAYER WINS!";
-      this.showOverlay(`${winner} The AI base was destroyed.`);
+      this.matchResolved = true;
+      const localWon = this.isMultiplayer ? this.playerTeam === Config.TEAM.PLAYER : true;
+      const winner = this.isMultiplayer ? (localWon ? "YOU WIN!" : "ENEMY WINS!") : "PLAYER WINS!";
+      if (localWon) {
+        const reward = this.awardVictoryCoins();
+        this.showOverlay(`${winner} The AI base was destroyed. +${reward} coins earned.`);
+      } else {
+        this.showOverlay(`${winner} The AI base was destroyed.`);
+      }
       this.logEvent({ type: "status", msg: winner });
     }
   }
@@ -3393,6 +3980,7 @@ Game.prototype.spawnBeamFx = function(from, to, className, duration) {
   beam.style.width = `${length}px`;
   beam.style.left = `${a.x}px`;
   beam.style.top = `${a.y}px`;
+  beam.style.setProperty("--fx-angle", `${angle}rad`);
   beam.style.transform = `translateY(-50%) rotate(${angle}rad)`;
   layer.appendChild(beam);
   setTimeout(() => beam.remove(), duration || 420);
@@ -3410,8 +3998,32 @@ Game.prototype.spawnBurstFx = function(r, c, className, duration) {
   setTimeout(() => burst.remove(), duration || 520);
 };
 
+Game.prototype.spawnMoveFx = function(from, to, dash) {
+  const layer = this.ensureFxLayer();
+  const a = this.getCellCenter(from.row, from.col);
+  const b = this.getCellCenter(to.row, to.col);
+  if (!layer || !a || !b) return;
+  const trail = document.createElement("div");
+  trail.className = `fx-move-trail${dash ? " dash" : ""}`;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const length = Math.max(16, Math.hypot(dx, dy));
+  trail.style.width = `${length}px`;
+  trail.style.left = `${a.x}px`;
+  trail.style.top = `${a.y}px`;
+  trail.style.setProperty("--fx-angle", `${Math.atan2(dy, dx)}rad`);
+  trail.style.transform = `translateY(-50%) rotate(${Math.atan2(dy, dx)}rad)`;
+  layer.appendChild(trail);
+  setTimeout(() => trail.remove(), dash ? 520 : 420);
+};
+
 Game.prototype.animateAttack = function(attacker, target) {
   if (!attacker || !target) return;
+  const sourceCell = this.board.getCell(attacker.row, attacker.col);
+  if (sourceCell) {
+    sourceCell.classList.add("attack-lunge");
+    setTimeout(() => sourceCell.classList.remove("attack-lunge"), 420);
+  }
   const range = Math.max(Math.abs(attacker.row - target.row), Math.abs(attacker.col - target.col));
   if (range <= 1) {
     this.spawnBurstFx(target.row, target.col, "fx-slash", 360);
@@ -3752,8 +4364,9 @@ Game.prototype.syncState = function(data) {
 Game.prototype.buyRune = function(unit, runeId) {
   const rune = window.RuneDefs.find(r => r.id === runeId);
   if (!rune) return false;
+  if (!unit || unit.kind !== "unit" || !this.entities.includes(unit)) return false;
   if (this.energy[unit.team] < rune.cost) return false;
-  if (unit.runes.length >= Math.min(3, unit.level || 1)) return false;
+  if (unit.runes.length >= 3) return false;
   if (unit.runes.some(r => r.id === runeId)) return false;
 
   this.spendEnergy(unit.team, rune.cost);
@@ -3773,58 +4386,56 @@ Game.prototype.buyRune = function(unit, runeId) {
 };
 
 Game.prototype.setupDraftSystem = function() {
+  if (!document.getElementById("menu-overlay")) {
+    const overlay = document.createElement("div");
+    overlay.id = "menu-overlay";
+    overlay.className = "menu-overlay hidden";
+    document.body.appendChild(overlay);
+  }
   if (!document.getElementById("draft-overlay")) {
     const overlay = document.createElement("div");
     overlay.id = "draft-overlay";
     overlay.className = "draft-overlay";
     document.body.appendChild(overlay);
   }
-  this.showDraftModeSelect();
+  const menuBtn = document.getElementById("menu-btn");
+  if (menuBtn) menuBtn.onclick = () => window.location.reload();
+  this.showMainMenu();
 };
 
 Game.prototype.showDraftModeSelect = function() {
-  const overlay = document.getElementById("draft-overlay");
-  if (!overlay || this.draft.completed || this.draft.active) return;
-  overlay.classList.remove("hidden");
-  overlay.innerHTML = `
-    <div class="draft-panel">
-      <div class="draft-hero">
-        <div>
-          <div class="draft-kicker">Match Setup</div>
-          <div class="draft-title">Draft Your Roster</div>
-        </div>
-        <div class="draft-actions">
-          <button class="btn btn-primary" id="draft-ai-start">Play vs AI</button>
-          <button class="btn btn-secondary" id="draft-pvp-wait">Use PvP Lobby</button>
-        </div>
-      </div>
-      <div class="draft-layout">
-        <div class="draft-board-card">
-          <div class="draft-card-title">Map Preview</div>
-          <div class="draft-map-preview">${this.renderDraftMapPreviewHTML()}</div>
-        </div>
-      </div>
-    </div>
-  `;
-  overlay.querySelector("#draft-ai-start").onclick = () => this.startDraft("ai");
-  overlay.querySelector("#draft-pvp-wait").onclick = () => {
-    overlay.classList.add("hidden");
-    this.logEvent({ type: "status", msg: "PvP draft will start when a player connects." });
-  };
+  this.renderMainMenu();
 };
 
 Game.prototype.startDraft = function(mode, options) {
   const opts = options || {};
+  const draftMode = mode || "ai";
+  if (draftMode === "pvp" && !this.canStartPvpDraft()) {
+    this.logEvent({ type: "error", msg: `PvP needs at least ${this.minimumPvpCards} owned cards.` });
+    this.renderMainMenu("pvp");
+    return;
+  }
   const firstTeam = opts.firstTeam || Config.TEAM.PLAYER;
   const secondTeam = firstTeam === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER;
+  const draftPool = this.getDraftableItems(draftMode);
+  const defaultPoolSize = draftPool.length;
+  const pickCount = typeof opts.pickCount === "number"
+    ? opts.pickCount
+    : Math.max(1, Math.min(8, Math.floor(Math.max(0, defaultPoolSize) / 2)));
+  this.hideMainMenu();
+  this.matchResolved = false;
   this.draftedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
   this.aiDraftNotes = { summary: "", entries: [] };
+  if (draftMode === "ai" && this.aiDraftLoaners.length) {
+    this.logEvent({ type: "status", msg: `Training draft added ${this.aiDraftLoaners.length} temporary cards for this match.` });
+  }
   this.draft = {
     active: true,
     completed: false,
-    mode: mode || "ai",
-    pickCount: opts.pickCount || 8,
-    sequence: this.getDraftSequence(firstTeam, secondTeam, opts.pickCount || 8),
+    mode: draftMode,
+    pickCount,
+    randomized: !!opts.randomizeTeams,
+    sequence: this.getDraftSequence(firstTeam, secondTeam, pickCount),
     currentIndex: 0,
     firstTeam,
     secondTeam
@@ -3834,10 +4445,29 @@ Game.prototype.startDraft = function(mode, options) {
   this.board.clearMarks();
   this.renderDraftOverlay();
   this.renderBuyControls();
+  if (opts.randomizeTeams) {
+    this.fillRandomDraftPicks();
+    return;
+  }
   if (this.isMultiplayer && !opts.remote && window.Multiplayer) {
     window.Multiplayer.sendPacket("DRAFT_START", { firstTeam, pickCount: this.draft.pickCount });
   }
   this.maybeRunAIDraftPick();
+};
+
+Game.prototype.fillRandomDraftPicks = function() {
+  const available = this.getDraftableItems(this.draft.mode).slice();
+  for (let i = available.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [available[i], available[j]] = [available[j], available[i]];
+  }
+  const needed = this.draft.pickCount * 2;
+  const picks = available.slice(0, needed);
+  for (let i = 0; i < this.draft.pickCount; i++) this.draftedUnits[Config.TEAM.PLAYER].add(picks[i]);
+  for (let i = this.draft.pickCount; i < needed; i++) this.draftedUnits[Config.TEAM.AI].add(picks[i]);
+  this.draft.currentIndex = this.draft.sequence.length;
+  this.logEvent({ type: "status", msg: "Random draft complete. Both rosters were assigned unique picks." });
+  this.completeDraft();
 };
 
 Game.prototype.getDraftSequence = function(firstTeam, secondTeam, pickCount) {
@@ -3858,14 +4488,36 @@ Game.prototype.getDraftSequence = function(firstTeam, secondTeam, pickCount) {
   return sequence;
 };
 
-Game.prototype.getDraftableUnits = function() {
+Game.prototype.getDraftableUnits = function(modeOverride) {
   const defs = window.Entities && window.Entities.unitDefs ? window.Entities.unitDefs : {};
-  return Object.keys(defs).filter(type => type !== "Skeleton" && !defs[type].hiddenFromShop);
+  const all = Object.keys(defs).filter(type => type !== "Skeleton" && !defs[type].hiddenFromShop);
+  const owned = new Set(this.getOwnedUnitTypes());
+  const loaners = modeOverride === "ai" ? new Set(this.aiDraftLoaners || []) : new Set();
+  return all.filter(type => owned.has(type) || loaners.has(type));
 };
 
-Game.prototype.getDraftableItems = function() {
+Game.prototype.getDraftableItems = function(modeOverride) {
   const biomeDefs = window.Entities && window.Entities.biomeDefs ? window.Entities.biomeDefs : {};
-  return [...this.getDraftableUnits(), ...Object.keys(biomeDefs)];
+  const ownedBiomes = new Set(this.getOwnedBiomeTypes());
+  const owned = [...this.getDraftableUnits(modeOverride), ...Object.keys(biomeDefs).filter(type => ownedBiomes.has(type))];
+  if (modeOverride !== "ai" || owned.length >= this.standardDraftCardsNeeded) {
+    if (modeOverride !== "ai") this.aiDraftLoaners = [];
+    return owned;
+  }
+  const all = this.getAllDraftableItems();
+  const ownedSet = new Set(owned);
+  const loaners = all.filter(type => !ownedSet.has(type)).slice(0, this.standardDraftCardsNeeded - owned.length);
+  this.aiDraftLoaners = loaners;
+  return [...owned, ...loaners];
+};
+
+Game.prototype.getAllDraftableItems = function() {
+  const defs = window.Entities && window.Entities.unitDefs ? window.Entities.unitDefs : {};
+  const biomeDefs = window.Entities && window.Entities.biomeDefs ? window.Entities.biomeDefs : {};
+  return [
+    ...Object.keys(defs).filter(type => type !== "Skeleton" && !defs[type].hiddenFromShop),
+    ...Object.keys(biomeDefs),
+  ];
 };
 
 Game.prototype.isDraftedItem = function(team, type) {
@@ -4004,7 +4656,7 @@ Game.prototype.getAIDraftScoredCandidates = function() {
   const ownEarlyCurveCount = ownCosts.filter(c => c <= 3).length;
   const ownBiomeCount = ownPicks.filter(type => biomeDefs[type]).length;
   const wantedClasses = ["Tank", "Assassin", "Breaker", "Marksman", "Artillery", "Support", "Disruptor", "Control", "Fighter"];
-  const available = this.getDraftableItems().filter(type => !picked.has(type));
+  const available = this.getDraftableItems(this.draft.mode).filter(type => !picked.has(type));
   if (!available.length) return [];
   const playerClassCounts = this.getDraftClassCounts(Config.TEAM.PLAYER) || {};
   const classCounters = {
@@ -4325,16 +4977,7 @@ Game.prototype.getAIReactionToPlayerPick = function(type) {
 };
 
 Game.prototype.renderAIDraftNotesHTML = function() {
-  if (this.draft.mode !== "ai") return "";
-  const summary = this.getAIDraftStrategySummary() || "Still mapping the board and waiting for real signals.";
-  const thought = this.getAIDraftCurrentThought() || "No immediate plan yet.";
-  return `
-    <div class="draft-ai-panel">
-      <div class="draft-card-title">AI Scout Notes</div>
-      <div class="draft-ai-summary">${summary}</div>
-      <div class="draft-ai-notes"><div class="draft-note current">${thought}</div></div>
-    </div>
-  `;
+  return "";
 };
 
 Game.prototype.getDraftedAffordableTypeForAI = function(maxCost) {
@@ -4365,7 +5008,7 @@ Game.prototype.renderDraftOverlay = function() {
   const localTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
   const canPick = this.draft.mode === "ai" ? currentTeam === Config.TEAM.PLAYER : currentTeam === localTeam;
   const picked = new Set([...this.draftedUnits[Config.TEAM.PLAYER], ...this.draftedUnits[Config.TEAM.AI]]);
-  const items = this.getDraftableItems().filter(type => !picked.has(type));
+  const items = this.getDraftableItems(this.draft.mode).filter(type => !picked.has(type));
   const sortMode = this.draftFilters.sort === "class" ? "class" : "cost";
   const classOrder = ["Fighter", "Marksman", "Artillery", "Assassin", "Breaker", "Disruptor", "Support", "Tank", "Control", "Biomes", "Other"];
   const getItemClass = (type) => biomeDefs[type] ? "Biomes" : this.getUnitClass(type);
@@ -4437,7 +5080,7 @@ Game.prototype.renderDraftOverlay = function() {
                       const isBiome = !!biomeDefs[type];
                       return `
                         <button class="draft-unit-card" data-unit="${type}" ${canPick ? "" : "disabled"}>
-                          <span class="draft-unit-symbol">${def.symbol}</span>
+                          <span class="draft-unit-symbol ${this.getUnitVisualClass(type)}">${def.symbol}</span>
                           <span class="draft-unit-main">
                             <b>${type}</b>
                             <small>${isBiome ? "Biome - " + (def.shopLabel || "Board Effect") : this.getUnitClass(type) + " - " + this.getShopRoleSummary(type)}</small>
@@ -4451,7 +5094,7 @@ Game.prototype.renderDraftOverlay = function() {
               `;
             }).join("")}
           </div>
-          ${this.renderAIDraftNotesHTML()}
+          ${this.aiDraftLoaners && this.aiDraftLoaners.length && this.draft.mode === "ai" ? `<div class="draft-shop-lock"><b>Training Loaners</b><span>${this.aiDraftLoaners.length} temporary cards are available for this AI match because your collection has fewer than ${this.standardDraftCardsNeeded} draftable cards.</span></div>` : ""}
         </div>
       </div>
     </div>
@@ -4485,7 +5128,8 @@ Game.prototype.makeDraftPick = function(type, options) {
   if (!this.draft.active || !type) return false;
   const team = opts.team || this.draft.sequence[this.draft.currentIndex];
   if (team !== this.draft.sequence[this.draft.currentIndex]) return false;
-  if (!this.getDraftableItems().includes(type)) return false;
+  const allowedItems = opts.remote ? this.getAllDraftableItems() : this.getDraftableItems(this.draft.mode);
+  if (!allowedItems.includes(type)) return false;
   if (this.draftedUnits[Config.TEAM.PLAYER].has(type) || this.draftedUnits[Config.TEAM.AI].has(type)) return false;
 
   this.draftedUnits[team].add(type);
@@ -4583,6 +5227,7 @@ Game.prototype.scoreAIRune = function(unit, rune) {
   if (rune.id === "rune_rampage") score += unit.maxHp <= 8 ? 7 : 4;
   if (rune.id === "rune_deft") score += (unit.range >= 2 && unit.dmg <= 3) ? 9 : 4;
   if (rune.id === "rune_chrono") score += (window.Abilities && window.Abilities[unit.type] && window.Abilities[unit.type].length) ? 9 : 2;
+  if (rune.id === "rune_mending") score += unit.maxHp >= 6 ? 8 : 5;
   if (unit.type === "Cleric" || unit.type === "Mage" || unit.type === "Hex") {
     if (rune.id === "rune_scope") score += 4;
   }
@@ -4595,6 +5240,7 @@ Game.prototype.scoreAIRune = function(unit, rune) {
   if (unit.type === "Ballista" && rune.id === "rune_scope") score += 6;
   if (unit.type === "Ballista" && rune.id === "rune_power") score += 4;
   if (unit.type === "Paladin" && rune.id === "rune_vitality") score += 4;
+  if ((unit.type === "Sentinel" || unit.type === "Bulwark" || unit.type === "Geomancer") && rune.id === "rune_mending") score += 4;
   return score - (rune.cost * 0.35);
 };
 
@@ -4602,7 +5248,7 @@ Game.prototype.chooseBestAIRunePurchase = function() {
   const candidates = this.entities.filter(e =>
     e.kind === "unit" &&
     e.team === Config.TEAM.AI &&
-    e.runes.length < Math.min(3, e.level || 1)
+    e.runes.length < 3
   );
   let best = null;
   for (const unit of candidates) {
@@ -4614,69 +5260,6 @@ Game.prototype.chooseBestAIRunePurchase = function() {
     }
   }
   return best && best.score > 0 ? best : null;
-};
-
-Game.prototype.applyUnitLevelUp = function(unit, level) {
-  const profile = this.getUnitLevelingProfile(unit);
-  if (!profile) return [];
-  const bonuses = (profile.levels && profile.levels[level]) || [];
-  const applied = [];
-  unit.cooldownMods = unit.cooldownMods || {};
-  for (const bonus of bonuses) {
-    if (!bonus || !bonus.stat) continue;
-    const amount = typeof bonus.amount === "number" ? bonus.amount : 0;
-    switch (bonus.stat) {
-      case "dmg":
-        unit.dmg += amount;
-        break;
-      case "range":
-        unit.range += amount;
-        break;
-      case "move":
-        unit.move += amount;
-        break;
-      case "apMax":
-        unit.apMax += amount;
-        unit.ap = Math.min(unit.apMax, unit.ap + Math.max(0, amount));
-        break;
-      case "hp":
-        unit.hp = Math.min(unit.maxHp, unit.hp + amount);
-        break;
-      case "maxHp":
-        unit.maxHp += amount;
-        unit.hp = Math.min(unit.maxHp, unit.hp + (bonus.heal != null ? bonus.heal : amount));
-        break;
-      case "cooldown":
-        if (bonus.ability) {
-          unit.cooldownMods[bonus.ability] = (unit.cooldownMods[bonus.ability] || 0) + amount;
-        }
-        break;
-      default:
-        break;
-    }
-    if (bonus.label) applied.push(bonus.label);
-  }
-  if (unit.hp > unit.maxHp) unit.hp = unit.maxHp;
-  return applied;
-};
- 
-Game.prototype.awardExp = function(unit, amount, targetOpt) {
-  if (!unit || unit.kind !== "unit") return;
-  if (unit.level >= 3) return;
-  const scaled = Math.max(0, amount);
-  unit.exp += scaled;
-  const profile = this.getUnitLevelingProfile(unit);
-  if (!profile) return;
-  while (unit.level < 3 && unit.exp >= ((profile.xpToLevel && profile.xpToLevel[unit.level + 1]) || Infinity)) {
-    unit.level += 1;
-    const labels = this.applyUnitLevelUp(unit, unit.level);
-    this.playSfx && this.playSfx("heal");
-    this.logEvent({
-      type: "level",
-      msg: `${unit.team === "P" ? "Player" : "AI"} ${unit.type} reached Level ${unit.level}${labels.length ? ` (${labels.join(", ")})` : ""}`,
-    });
-  }
-  this.updateUnitPanel(unit);
 };
 
 Game.prototype.getBuyPositions = function(team, type) {
@@ -4904,11 +5487,13 @@ Game.prototype.chooseAIPurchaseType = function() {
   const needHealer = aiUnits.some(u => u.hp < u.maxHp);
   if (needHealer && uniqueAffordable.includes("Mage")) return "Mage";
   const preferRanged = playerUnits.length === 0 || playerUnits.some(u => u.type === "Warrior");
-  const weights = { Warrior: 1, Archer: 2, Mage: 1, Paladin: 2, Berserker: 2, Builder: 2, Alchemist: 2, Rogue: 2, Cleric: 1, Firecaller: 2, Magnet: 1, Avenger: 1, Necromancer: 1, Hex: 1, Sludge: 1, Druid: 1, Sentinel: 2, Ballista: 2, Bulwark: 2, Stalker: 2, Slicer: 2, "Bounty Hunter": 2, Silencer: 2 };
+  const weights = { Warrior: 1, Archer: 2, Mage: 1, Paladin: 2, Berserker: 2, Builder: 2, Alchemist: 2, Rogue: 2, Cleric: 1, Firecaller: 2, Magnet: 1, Avenger: 1, Necromancer: 1, Hex: 1, Sludge: 1, Druid: 1, Sentinel: 2, Ballista: 2, Bulwark: 2, Stalker: 2, Slicer: 2, "Bounty Hunter": 2, Silencer: 2, Geomancer: 1, Plague: 2 };
   if (preferRanged) { weights.Archer += 1; weights.Paladin += 1; }
   if (playerUnits.some(u => ["Archer", "Ballista", "Tidewalker"].includes(u.type))) weights.Stalker += 1;
   if (playerUnits.some(u => this.getUnitClass(u.type) === "Tank")) weights.Slicer += 2;
   if (playerUnits.some(u => (u.ap || 0) > 0)) weights.Silencer += 1;
+  if (playerUnits.length >= 3) weights.Plague += 1;
+  if (aiUnits.some(u => u.type === "Geomancer")) weights.Geomancer = 0;
   if (aiUnits.length < 2 && uniqueAffordable.includes("Bulwark")) weights.Bulwark += 1;
   const list = uniqueAffordable.flatMap(t => Array(Math.max(1, weights[t] || 1)).fill(t));
   if (list.length) return list[Math.floor(Math.random() * list.length)];
