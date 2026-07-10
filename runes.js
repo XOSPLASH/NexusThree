@@ -2,94 +2,75 @@
   window.RuneDefs = [
     {
       id: "rune_vitality",
-      baseName: "Vitality",
+      name: "Vitality",
       cost: 2,
-      stages: [
-        { level: 1, name: "Vitality", desc: "+2 Max HP", apply: (u) => { u.maxHp += 2; u.hp += 2; } },
-      ],
+      desc: "+20 Max HP",
+      apply: (u) => { u.maxHp += 20; u.hp += 20; },
     },
     {
       id: "rune_power",
-      baseName: "Power",
+      name: "Power",
       cost: 2,
-      stages: [
-        { level: 1, name: "Power", desc: "+2 Damage", apply: (u) => { u.dmg += 2; } },
-      ],
+      desc: "+20 Damage",
+      apply: (u) => { u.dmg += 20; },
     },
     {
       id: "rune_swiftness",
-      baseName: "Swiftness",
+      name: "Swiftness",
       cost: 3,
-      stages: [
-        { level: 1, name: "Swiftness", desc: "+1 Move", apply: (u) => { u.move += 1; } },
-      ],
+      desc: "+1 Move",
+      apply: (u) => { u.move += 1; },
     },
     {
       id: "rune_scope",
-      baseName: "Scope",
+      name: "Scope",
       cost: 3,
-      stages: [
-        { level: 1, name: "Scope", desc: "+1 Range", apply: (u) => { u.range += 1; } },
-      ],
+      desc: "+1 Range",
+      apply: (u) => { u.range += 1; },
     },
     {
       id: "rune_frenzy",
-      baseName: "Frenzy",
+      name: "Frenzy",
       cost: 4,
-      stages: [
-        { level: 1, name: "Frenzy", desc: "+1 Max AP", apply: (u) => { u.apMax += 1; u.ap += 1; } },
-      ],
+      desc: "+1 Max AP",
+      apply: (u) => { u.apMax += 1; u.ap += 1; },
     },
     {
       id: "rune_rampage",
-      baseName: "Rampage",
+      name: "Rampage",
       cost: 4,
-      stages: [
-        { level: 1, name: "Rampage", desc: "+4 Damage, -3 Max HP", apply: (u) => { u.maxHp -= 3; u.hp = Math.max(1, u.hp - 3); u.dmg += 4; } },
-      ],
+      desc: "+40 Damage, -30 Max HP",
+      apply: (u) => { u.maxHp -= 30; u.hp = Math.max(1, u.hp - 30); u.dmg += 40; },
     },
     {
       id: "rune_deft",
-      baseName: "Deft",
+      name: "Deft",
       cost: 5,
-      stages: [
-        { level: 1, name: "Deft", desc: "+1 Range, +1 Move", apply: (u) => { u.range += 1; u.move += 1; } },
-      ],
+      desc: "+1 Range, +1 Move",
+      apply: (u) => { u.range += 1; u.move += 1; },
     },
     {
       id: "rune_chrono",
-      baseName: "Chrono",
+      name: "Chrono",
       cost: 5,
-      stages: [
-        {
-          level: 1,
-          name: "Chrono",
-          desc: "+1 Ability Cooldown",
-          apply: (u) => {
-            u.globalCooldownMod = (u.globalCooldownMod || 0) - 1;
-            if (u.abilityCooldowns) {
-              for (const k of Object.keys(u.abilityCooldowns)) {
-                u.abilityCooldowns[k] = Math.max(0, u.abilityCooldowns[k] - 1);
-              }
-            }
+      desc: "+1 Ability Cooldown",
+      apply: (u) => {
+        u.globalCooldownMod = (u.globalCooldownMod || 0) - 1;
+        if (u.abilityCooldowns) {
+          for (const k of Object.keys(u.abilityCooldowns)) {
+            u.abilityCooldowns[k] = Math.max(0, u.abilityCooldowns[k] - 1);
           }
-        },
-      ],
+        }
+      }
     },
     {
       id: "rune_mending",
-      baseName: "Mending",
+      name: "Mending",
       cost: 4,
-      stages: [
-        {
-          level: 1,
-          name: "Mending",
-          desc: "Heal 10 HP at the start of each of this unit's turns.",
-          apply: () => {},
-          onTurnStart: (u) => { u.hp = Math.min(u.maxHp, u.hp + 10); },
-          healPerTurn: 10,
-        },
-      ],
+      desc: "Heal 10 HP at the start of each of this unit's turns.",
+      apply: () => {},
+      onTurnStart: (u) => { u.hp = Math.min(u.maxHp, u.hp + 10); },
+      healPerTurn: 10,
     }
   ];
 })();

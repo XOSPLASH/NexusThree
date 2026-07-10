@@ -2023,11 +2023,11 @@ body {
 }
 .draft-terrain-water { background: linear-gradient(145deg, #22d3ee, #075985); }
 .draft-terrain-wall,
-.draft-terrain-fortwall { background: linear-gradient(145deg, #94a3b8, #334155); }
+.draft-terrain-fortwall { background: linear-gradient(145deg, #ef4444, #991b1b); }
 .draft-terrain-bridge { background: linear-gradient(145deg, #f59e0b, #713f12); }
 .draft-terrain-forest { background: linear-gradient(145deg, #22c55e, #14532d); }
 .draft-terrain-ruins { background: linear-gradient(145deg, #d6d3d1, #57534e); }
-.draft-terrain-nexus { background: radial-gradient(circle at 35% 25%, #f8fafc, #38bdf8 25%, #4f46e5 70%); }
+.draft-terrain-nexus { background: radial-gradient(circle at 35% 25%, #9ca3af, #6b7280 25%, #374151 70%); }
 
 .btn,
 .unit-item,

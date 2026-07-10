@@ -1,4 +1,4 @@
-﻿// Builder abilities
+// Builder abilities
 (function() {
   window.Entities = window.Entities || {};
   window.Entities.unitDefs = window.Entities.unitDefs || {};
@@ -42,7 +42,7 @@
           // Check if already has construction site (shouldn't exist anymore, but for safety)
           if (game.constructionSites[r][c]) continue;
 
-          // Valid targets: Empty, Water, Wall, Fortwall, Forest (to clear)
+          // Valid targets: Empty, Water, Wall, Fortwall
           res.push([r, c]);
         }
       }
@@ -61,7 +61,7 @@
       // Apply construction/clear rules
       if (terr === "water") {
         game.terrain[r][c] = "bridge";
-      } else if (terr === "wall" || terr === "fortwall" || terr === "forest") {
+      } else if (terr === "wall" || terr === "fortwall") {
         game.terrain[r][c] = null; // Clear
       } else if (terr === "bridge") {
         game.terrain[r][c] = "water"; // Clear bridge -> water

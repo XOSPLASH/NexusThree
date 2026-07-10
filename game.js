@@ -252,7 +252,7 @@ class Game {
       const role = kind === "biome" ? (def.shopLabel || "Biome") : this.getShopRoleSummary(type);
       const cardClass = kind === "biome" ? "Biome" : this.getUnitClass(type);
       return `
-        <div class="menu-card-tile rarity-${rarity}${owned ? "" : " locked"}">
+        <div class="menu-card-tile rarity-${rarity}${owned ? "" : " locked"}" data-card-type="${type}">
           <div class="menu-card-head">
             <div class="menu-card-symbol ${this.getUnitVisualClass(type)}">${def.symbol}</div>
             <div>
@@ -467,6 +467,54 @@ class Game {
     if (costSelect) costSelect.onchange = update;
     if (raritySelect) raritySelect.onchange = update;
     if (ownershipSelect) ownershipSelect.onchange = update;
+    // Add card click handlers
+    document.querySelectorAll(".menu-card-tile").forEach((tile) => {
+      tile.onclick = (e) => {
+        const type = tile.dataset.cardType;
+        if (!type) return;
+        const kind = this.getCardKind(type);
+        if (kind === "biome") {
+          const def = window.Entities.biomeDefs[type];
+          if (def) {
+            this.updateUnitPanel({
+              kind: "biome_preview",
+              type: type,
+              symbol: def.symbol,
+              desc: def.desc,
+              cost: def.cost,
+              duration: def.duration,
+              color: def.color
+            });
+          }
+        } else {
+          const def = window.Entities.unitDefs[type];
+          if (def) {
+            this.updateUnitPanel({
+              kind: "unit",
+              team: Config.TEAM.PLAYER,
+              type: type,
+              row: 0,
+              col: 0,
+              hp: def.hp,
+              maxHp: def.hp,
+              dmg: def.dmg,
+              range: def.range,
+              move: def.move,
+              symbol: def.symbol,
+              ability: def.ability,
+              rangePattern: def.rangePattern,
+              movePattern: def.movePattern || "orthogonal",
+              thrower: !!def.thrower,
+              abilityCooldowns: {},
+              runes: [],
+              apMax: def.apMax || 2,
+              ap: def.apMax || 2,
+              cost: def.cost
+            });
+          }
+        }
+      };
+    });
   }
 
   attachPvpMenuEvents() {
@@ -697,7 +745,7 @@ class Game {
       Tidewalker: "Water Striker",
       Shade: "Shadow Assassin",
       Bulwark: "Ally Protector",
-      Stalker: "Forest Ambusher",
+      Stalker: "Ambusher",
       Slicer: "Tank Killer",
       "Bounty Hunter": "High Risk Carry",
       Silencer: "Attack Lockdown",
@@ -792,7 +840,7 @@ class Game {
       cell.innerHTML = "";
       cell.style.borderColor = "";
       cell.classList.remove(
-        "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-forest","terrain-ruins","terrain-nexus","terrain-nexus-player","terrain-nexus-ai",
+        "terrain-water","terrain-wall","terrain-bridge","terrain-fortwall","terrain-nexus","terrain-nexus-player","terrain-nexus-ai",
           "hazard-fire","hazard-sludge","construction-site","biome-player","biome-ai",
           "unit-player","unit-ai","status-hex","status-stuck","token-player","token-ai","in-shadow",
         "move-hl","attack-hl","heal-hl","ability-hl","attack-range-hl","ability-range-max","selected-empty","selected-target-hl","buy-hl"
@@ -815,8 +863,6 @@ class Game {
         else if (t === "wall") cell.classList.add("terrain-wall");
         else if (t === "fortwall") cell.classList.add("terrain-fortwall");
         else if (t === "bridge") cell.classList.add("terrain-bridge");
-        else if (t === "forest") cell.classList.add("terrain-forest");
-        else if (t === "ruins") cell.classList.add("terrain-ruins");
         else if (t === "nexus") {
           cell.classList.add("terrain-nexus");
           const owner = this.nexusOwners[r][c];
@@ -827,10 +873,10 @@ class Game {
           icon.textContent = "🔷"; // Larger blue diamond shape
           cell.appendChild(icon);
         }
-        if (t === "wall" || t === "bridge" || t === "fortwall" || t === "forest" || t === "ruins") {
+        if (t === "wall" || t === "bridge" || t === "fortwall") {
           const terrainIcon = document.createElement("span");
           terrainIcon.className = "terrain-icon";
-          terrainIcon.textContent = t === "wall" ? "🧱" : (t === "bridge" ? "🌉" : (t === "forest" ? "🌲" : (t === "ruins" ? "▥" : "⬜")));
+          terrainIcon.textContent = t === "wall" ? "🧱" : (t === "bridge" ? "🌉" : "⬜");
           cell.appendChild(terrainIcon);
         }
       }
@@ -843,8 +889,27 @@ class Game {
         if (!h) continue;
         const cell = this.board.getCell(r, c);
         if (!cell) continue;
-        if (h.kind === "fire") cell.classList.add("hazard-fire");
-        else if (h.kind === "sludge") cell.classList.add("hazard-sludge");
+        if (h.kind === "fire") {
+          cell.classList.add("hazard-fire");
+          const icon = document.createElement("span");
+          icon.className = "terrain-icon";
+          icon.textContent = "🔥";
+          cell.appendChild(icon);
+          const badge = document.createElement("span");
+          badge.className = "status-badge";
+          badge.textContent = `${h.turns}T`;
+          cell.appendChild(badge);
+        } else if (h.kind === "sludge") {
+          cell.classList.add("hazard-sludge");
+          const icon = document.createElement("span");
+          icon.className = "terrain-icon";
+          icon.textContent = "🫧";
+          cell.appendChild(icon);
+          const badge = document.createElement("span");
+          badge.className = "status-badge";
+          badge.textContent = `${h.turns}T`;
+          cell.appendChild(badge);
+        }
       }
     }
 
@@ -1184,8 +1249,6 @@ class Game {
       wall: { icon: "🧱", name: "Wall", desc: "A basic wall tile that blocks movement and line paths.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "wall" },
       fortwall: { icon: "⬜", name: "Fortwall", desc: "A reinforced wall built by the Builder. It blocks movement.", notes: [["Movement", "Blocked"], ["Builder", "Can clear"]], subtype: "fortwall" },
       bridge: { icon: "🌉", name: "Bridge", desc: "A passable bridge over water created by construction.", notes: [["Movement", "Passable"], ["Builder", "Can revert"]], subtype: "bridge" },
-      forest: { icon: "🌲", name: "Forest", desc: "Dense cover that reduces incoming ranged damage.", notes: [["Movement", "Passable"], ["Cover", "-10 ranged damage"], ["Builder", "Can clear"]], subtype: "forest" },
-      ruins: { icon: "▥", name: "Ruins", desc: "Broken high ground that boosts marksman attacks.", notes: [["Movement", "Passable"], ["Marksman", "+10 damage from ruins"]], subtype: "ruins" },
       nexus: { icon: "💠", name: "Nexus", desc: "Standing here captures the nexus for your team.", notes: [["Effect", "Capture point"]], subtype: "nexus" },
       grass: { icon: "🟩", name: "Open Ground", desc: "Open ground with no special effect.", notes: [["Movement", "Passable"], ["Effect", "None"]], subtype: "grass" }
     };
@@ -1309,11 +1372,7 @@ class Game {
       const turns = hazard && hazard.kind === "sludge" ? hazard.turns : 0;
       statuses.push(turns > 0 ? `Trapped (${turns})` : `Trapped (Mire)`);
     }
-    const terrain = this.terrain && this.terrain[unit.row] && this.terrain[unit.row][unit.col];
-    if (terrain === "forest") statuses.push("Forest Cover (-10 ranged dmg)");
-    if (terrain === "ruins") {
-      statuses.push(this.getUnitClassFor(unit) === "Marksman" ? "Ruins (+10 attack)" : "Ruins");
-    }
+
     return statuses;
   }
 
@@ -1350,36 +1409,19 @@ class Game {
     return (window.RuneDefs || []).find(r => r.id === runeId) || null;
   }
 
-  getRuneStage(runeDef, level) {
-    if (!runeDef || !Array.isArray(runeDef.stages)) return null;
-    return runeDef.stages.find(stage => stage.level === level) || null;
-  }
-
-  getRuneMaxLevel(runeDef) {
-    return runeDef && Array.isArray(runeDef.stages) ? runeDef.stages.length : 1;
-  }
-
   createOwnedRune(runeDef) {
-    const firstStage = this.getRuneStage(runeDef, 1);
-    if (!runeDef || !firstStage) return null;
+    if (!runeDef) return null;
     return {
       id: runeDef.id,
-      baseName: runeDef.baseName || firstStage.name,
-      level: 1,
-      maxLevel: this.getRuneMaxLevel(runeDef),
-      name: firstStage.name,
-      desc: firstStage.desc,
+      name: runeDef.name,
+      desc: runeDef.desc,
     };
   }
 
   syncOwnedRunePresentation(ownedRune, runeDef) {
     if (!ownedRune || !runeDef) return ownedRune;
-    const level = Math.max(1, Math.min(this.getRuneMaxLevel(runeDef), Number(ownedRune.level || 1)));
-    const stage = this.getRuneStage(runeDef, level);
-    ownedRune.level = level;
-    ownedRune.maxLevel = this.getRuneMaxLevel(runeDef);
-    ownedRune.name = stage && stage.name ? stage.name : (ownedRune.name || runeDef.baseName || "Rune");
-    ownedRune.desc = stage && stage.desc ? stage.desc : (ownedRune.desc || "");
+    ownedRune.name = runeDef.name;
+    ownedRune.desc = runeDef.desc;
     return ownedRune;
   }
 
@@ -1387,19 +1429,12 @@ class Game {
     return ownedRune ? "Active" : "";
   }
 
-  getActiveRuneStage(unit, rune) {
-    if (!unit || !rune) return null;
-    const runeDef = this.getRuneDefById(rune.id);
-    if (!runeDef) return null;
-    return this.getRuneStage(runeDef, rune.level || 1);
-  }
-
   getRuneTurnStartHeal(unit) {
     if (!unit || !Array.isArray(unit.runes)) return 0;
     let total = 0;
     for (const rune of unit.runes) {
-      const stage = this.getActiveRuneStage(unit, rune);
-      total += Number((stage && stage.healPerTurn) || 0);
+      const runeDef = this.getRuneDefById(rune.id);
+      total += Number((runeDef && runeDef.healPerTurn) || 0);
     }
     return total;
   }
@@ -1409,10 +1444,10 @@ class Game {
       if (!unit || unit.kind !== "unit" || unit.team !== team || !Array.isArray(unit.runes)) continue;
       let healed = false;
       for (const ownedRune of unit.runes) {
-        const stage = this.getActiveRuneStage(unit, ownedRune);
-        if (!stage || typeof stage.onTurnStart !== "function") continue;
+        const runeDef = this.getRuneDefById(ownedRune.id);
+        if (!runeDef || typeof runeDef.onTurnStart !== "function") continue;
         const beforeHp = unit.hp;
-        stage.onTurnStart(unit, this);
+        runeDef.onTurnStart(unit, this);
         healed = healed || unit.hp > beforeHp;
       }
       if (healed) {
@@ -1512,6 +1547,12 @@ class Game {
       descEl.textContent = info.desc;
       const [displayRow, displayCol] = this.getDisplayCoords(ent.row, ent.col);
       const rows = [["Tile", `(${displayRow}, ${displayCol})`], ...info.notes];
+      // If it's a nexus, add owner info!
+      if (this.terrain[ent.row][ent.col] === "nexus") {
+        const owner = this.nexusOwners[ent.row][ent.col];
+        const ownerLabel = owner == null ? "Neutral" : (owner === Config.TEAM.PLAYER ? "You" : "Enemy");
+        rows.push(["Owned By", ownerLabel]);
+      }
       for (const [k, v] of rows) {
         const li = document.createElement("li");
         li.textContent = `${k}: ${v}`;
@@ -1577,6 +1618,11 @@ class Game {
         ["Movement", `${ent.move}`, base.move, this.formatPatternLabel(ent.movePattern || "orthogonal")],
         ["AP", `${ent.ap}/${effectiveApMax}`],
       ];
+      
+      // Add cost if previewing from shop
+      if (ent.cost !== undefined) {
+        stats.unshift(["Cost", `${ent.cost}⚡`]);
+      }
       for (const [k, v, b, sub] of stats) {
         const li = document.createElement("li");
         if (k === "AP") {
@@ -1585,6 +1631,14 @@ class Game {
           li.innerHTML = `
             <span class="stat-key">AP</span>
             <span class="stat-value">${v} <span class="ap-pips">${pips}</span></span>
+          `;
+        } else if (k === "Cost") {
+          li.className = "stat-card";
+          li.innerHTML = `
+            <span class="stat-key">${k}</span>
+            <span class="stat-value-wrap">
+              <span class="stat-value">${v}</span>
+            </span>
           `;
         } else {
           const cur = k === "HP" ? ent.hp : (k === "Damage" ? displayedDmg : (k === "Range" ? displayedRange : ent.move));
@@ -1804,17 +1858,12 @@ class Game {
       if (owned) this.syncOwnedRunePresentation(owned, def);
       const canBuyFresh = unit.runes.length < 3;
       const canAct = !owned && canBuyFresh;
-      const firstStage = this.getRuneStage(def, 1) || {};
       const item = document.createElement("div");
       item.className = "rune-item";
-      const stageNotes = (def.stages || []).map((stage) => {
-        const timer = stage.turnsToNext ? ` • ${stage.turnsToNext} turns to next` : "";
-        return `${stage.desc}${timer}`;
-      }).join(" · ");
       item.innerHTML = `
         <div class="rune-info">
-          <div class="rune-name">${(owned ? owned.name : firstStage.name) || def.baseName}</div>
-          <div class="rune-desc">${(owned ? owned.desc : firstStage.desc) || ""}</div>
+          <div class="rune-name">${(owned ? owned.name : def.name) || "Rune"}</div>
+          <div class="rune-desc">${(owned ? owned.desc : def.desc) || ""}</div>
         </div>
         <button class="btn btn-sm">${owned ? "Owned" : `Buy (${def.cost})`}</button>
       `;
@@ -2848,14 +2897,6 @@ class Game {
     }
 
     let effectiveDmg = dmg + bonus + biomeDmgBonus;
-    if (source && source.kind === "unit" && target && target.kind === "unit") {
-      const sourceTerrain = this.terrain[source.row] && this.terrain[source.row][source.col];
-      const targetTerrain = this.terrain[target.row] && this.terrain[target.row][target.col];
-      const sourceClass = this.getUnitClassFor(source);
-      const dist = Math.max(Math.abs(source.row - target.row), Math.abs(source.col - target.col));
-      if (sourceTerrain === "ruins" && sourceClass === "Marksman") effectiveDmg += 10;
-      if (targetTerrain === "forest" && dist > 1) effectiveDmg = Math.max(1, effectiveDmg - 10);
-    }
     if (target.kind === "unit" && (target.guardTurns || 0) > 0) {
       const gv = (target.guardValue != null && target.guardValue !== 0) ? target.guardValue : 10;
       if (gv > 0 && gv < 1) {
@@ -3009,8 +3050,7 @@ class Game {
       if (window.RuneDefs && this.energy[Config.TEAM.AI] >= 2) {
         const pick = this.chooseBestAIRunePurchase();
         if (pick && this.buyRune(pick.unit, pick.rune.id)) {
-          const firstStage = this.getRuneStage(pick.rune, 1);
-          this.logEvent({ type: "status", msg: `AI bought ${(firstStage && firstStage.name) || pick.rune.baseName || "a rune"} for ${pick.unit.type}` });
+          this.logEvent({ type: "status", msg: `AI bought ${pick.rune.name || "a rune"} for ${pick.unit.type}` });
         }
       }
     }
@@ -3058,13 +3098,11 @@ class Game {
         if (u.type === "Stalker" && ((u.abilityCooldowns["Ambush"] || 0) === 0)) {
           const def = this.getAbilityDefForUnit(u);
           if (def) {
-            const forestBonus = this.terrain[u.row] && this.terrain[u.row][u.col] === "forest";
             const scored = def.computeTargets(this, u).map(([r, c]) => {
               const target = this.occupants[r][c];
               if (!target || target.team === u.team) return { r, c, score: 0, target: null };
               let score = (target.kind === "base" ? 8 : 3 + (target.maxHp - target.hp));
-              if (forestBonus) score += 4;
-              if (target.hp <= (forestBonus ? 5 : 3)) score += 5;
+              if (target.hp <= 3) score += 5;
               return { r, c, score, target };
             }).sort((a, b) => b.score - a.score);
             if (scored.length && scored[0].score > 0) {
@@ -3865,10 +3903,8 @@ Game.prototype.generateTerrain = function() {
 
   const weightedTerrain = () => {
     const roll = Math.random();
-    if (roll < 0.34) return "forest";
-    if (roll < 0.58) return "water";
-    if (roll < 0.78) return "wall";
-    return "ruins";
+    if (roll < 0.4) return "water";
+    return "wall";
   };
 
   const growCluster = (terrain, startR, startC, size, bias) => {
@@ -3897,21 +3933,13 @@ Game.prototype.generateTerrain = function() {
     ];
   };
 
-  for (let i = 0; i < 1; i++) {
+  for (let i = 0; i < 2; i++) {
     const [r, c] = randomNearCenter(Config.ROWS);
     growCluster("water", r, c, 3 + Math.floor(Math.random() * 2), Math.random() < 0.5 ? [[1,0],[-1,0],[1,1],[-1,-1]] : [[0,1],[0,-1],[1,1],[-1,-1]]);
   }
-  for (let i = 0; i < 1; i++) {
+  for (let i = 0; i < 2; i++) {
     const [r, c] = randomNearCenter(Config.ROWS - 2);
     growCluster("wall", r, c, 2 + Math.floor(Math.random() * 2), Math.random() < 0.5 ? [[1,0],[-1,0]] : [[0,1],[0,-1]]);
-  }
-  for (let i = 0; i < 2; i++) {
-    const [r, c] = randomNearCenter(Config.ROWS + 2);
-    growCluster("forest", r, c, 2 + Math.floor(Math.random() * 2));
-  }
-  for (let i = 0; i < 2; i++) {
-    const [r, c] = randomNearCenter(6);
-    growCluster("ruins", r, c, 1 + Math.floor(Math.random() * 2));
   }
 
   let safety = 0;
@@ -4373,8 +4401,7 @@ Game.prototype.buyRune = function(unit, runeId) {
   const entry = this.createOwnedRune(rune);
   if (!entry) return false;
   unit.runes.push(entry);
-  const firstStage = this.getRuneStage(rune, 1);
-  if (firstStage && typeof firstStage.apply === "function") firstStage.apply(unit);
+  if (typeof rune.apply === "function") rune.apply(unit);
   this.playSfx && this.playSfx("heal");
   this.updateUnitPanel(unit);
   this.updateHUD();
@@ -5433,6 +5460,7 @@ Game.prototype.renderBuyControls = function() {
             symbol: def.symbol, ability: def.ability, rangePattern: def.rangePattern, movePattern: def.movePattern || "orthogonal",
             thrower: !!def.thrower,
             abilityCooldowns: {}, runes: [], apMax: def.apMax || 2, ap: def.apMax || 2,
+            cost: def.cost
           };
           this.updateUnitPanel(preview);
         }
