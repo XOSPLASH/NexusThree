@@ -732,6 +732,7 @@ body {
 .menu-card-tile.rarity-common { border-color: rgba(148, 163, 184, 0.42); }
 .menu-card-tile.rarity-rare { border-color: rgba(96, 165, 250, 0.58); }
 .menu-card-tile.rarity-epic { border-color: rgba(168, 85, 247, 0.62); }
+.menu-card-tile.rarity-mythic { border-color: rgba(236, 72, 153, 0.72); }
 .menu-card-tile.rarity-legendary { border-color: rgba(245, 158, 11, 0.72); }
 .menu-card-head {
   display: flex;
@@ -760,6 +761,10 @@ body {
   font-size: 11px;
   line-height: 1.4;
 }
+.menu-card-description {
+  margin-top: 6px;
+  color: #cbd5e1;
+}
 .menu-card-badges {
   display: flex;
   gap: 6px;
@@ -784,6 +789,7 @@ body {
 .menu-badge.rarity.common { border-color: rgba(148, 163, 184, 0.38); }
 .menu-badge.rarity.rare { border-color: rgba(96, 165, 250, 0.45); }
 .menu-badge.rarity.epic { border-color: rgba(168, 85, 247, 0.45); }
+.menu-badge.rarity.mythic { border-color: rgba(236, 72, 153, 0.52); }
 .menu-badge.rarity.legendary { border-color: rgba(245, 158, 11, 0.52); }
 .menu-empty-state {
   padding: 24px;
@@ -842,6 +848,7 @@ body {
 }
 .pack-result-card.rarity-rare { border-color: rgba(96, 165, 250, 0.7); }
 .pack-result-card.rarity-epic { border-color: rgba(168, 85, 247, 0.78); }
+.pack-result-card.rarity-mythic { border-color: rgba(236, 72, 153, 0.8); }
 .pack-result-card.rarity-legendary { border-color: rgba(245, 158, 11, 0.86); }
 .pack-result-card strong { font-size: 14px; }
 .pack-result-card span { color: #94a3b8; font-size: 11px; text-transform: uppercase; font-weight: 800; }

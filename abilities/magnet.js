@@ -56,19 +56,27 @@
         cell.classList.add("pull-anim");
         setTimeout(() => cell.classList.remove("pull-anim"), 620);
       }
-      const destR = r + Math.sign(unit.row - r);
-      const destC = c + Math.sign(unit.col - c);
-      if (game.inBounds(destR, destC)) {
+      const stepR = Math.sign(unit.row - r);
+      const stepC = Math.sign(unit.col - c);
+      let moved = false;
+      for (let i = 1; i <= 2; i++) {
+        const destR = r + stepR * i;
+        const destC = c + stepC * i;
+        if (!game.inBounds(destR, destC)) break;
         const terr = game.terrain[destR][destC];
-        if (game.isTerrainPassableForUnit(terr, occ) && game.occupants[destR][destC] == null) {
-          game.moveUnit(occ, destR, destC, { dash: true });
-        }
+        const pathClear = game.isTerrainPassableForUnit(terr, occ) && game.occupants[destR][destC] == null;
+        if (!pathClear) break;
+        const nextCell = game.board.getCell(destR, destC);
+        if (nextCell) nextCell.classList.add("pull-anim");
+        game.moveUnit(occ, destR, destC, { dash: true });
+        moved = true;
+        break;
       }
       unit.ap = Math.max(0, unit.ap - 1);
       const baseCd = game.getAbilityCooldown(unit, "Pull");
       unit.abilityCooldowns["Pull"] = baseCd;
       if (game.playSfx) game.playSfx("ability");
-      game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Magnet`, ability: "Pull" });
+      game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Magnet`, ability: "Pull", msg: moved ? "Target pulled inward" : "Pull blocked" });
       game.renderEntities();
     },
   });

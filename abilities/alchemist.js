@@ -10,7 +10,7 @@
   };
   const makeCatalyze = () => ({
     name: "Catalyze",
-    desc: "Select a 3x3 area to deal 30 damage to enemies.",
+    desc: "Grant allied units in the target 3x3 area a temporary +1 AP Max buff for 2 turns.",
     range: 3,
     rangePattern: "select",
     damage: 30,
@@ -20,9 +20,9 @@
       const maxBox = Math.max(0, this.range || unit.range || 0);
       for (let dr = -maxBox; dr <= maxBox; dr++) {
         for (let dc = -maxBox; dc <= maxBox; dc++) {
-          const r = unit.row + dr, c = unit.col + dc;
-          if (!game.inBounds(r, c)) continue;
-          res.push([r, c]);
+          const rr = unit.row + dr, cc = unit.col + dc;
+          if (!game.inBounds(rr, cc)) continue;
+          res.push([rr, cc]);
         }
       }
       return res;
@@ -33,8 +33,10 @@
           const rr = r + dr, cc = c + dc;
           if (!game.inBounds(rr, cc)) continue;
           const occ = game.occupants[rr][cc];
-          if (occ && occ.team !== unit.team) {
-            game.applyDamage(occ, 30, unit);
+          if (occ && occ.kind === "unit" && occ.team === unit.team) {
+            occ.buffTurns = Math.max((occ.buffTurns || 0), 2);
+            occ.tempApBonus = Math.max((occ.tempApBonus || 0), 1);
+            occ.ap = Math.min(game.getEffectiveApMax(occ), (occ.ap || 0) + 1);
           }
           const cell = game.board.getCell(rr, cc);
           if (cell) {
@@ -47,7 +49,9 @@
       const baseCd = game.getAbilityCooldown(unit, "Catalyze");
       unit.abilityCooldowns["Catalyze"] = baseCd;
       if (game.playSfx) game.playSfx("ability");
-      game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Alchemist`, ability: "Catalyze" });
+      game.logEvent({ type: "ability", caster: `${unit.team === "P" ? "Player" : "AI"} Alchemist`, ability: "Catalyze", msg: "Allies energized" });
+      game.renderEntities();
+      game.updateUnitPanel(unit);
     },
   });
   window.Abilities.Alchemist = [makeCatalyze()];

@@ -48,12 +48,15 @@
         game.applyDamage(target, 20, unit);
         if (target.kind === "unit") {
            target.ap = 0;
-           target.stunnedTurns = Math.max((target.stunnedTurns || 0), 1);
+           target.stunnedTurns = Math.max((target.stunnedTurns || 0), 2);
            game.logEvent({ type: "status", msg: `${target.type} frozen by Frostbolt!` });
            const cell = game.board.getCell(r, c);
            if (cell) {
              cell.classList.add("freeze-anim");
              setTimeout(() => cell.classList.remove("freeze-anim"), 700);
+           }
+           if (game.selected && game.selected.kind === "unit" && game.selected === target) {
+             game.updateUnitPanel(target);
            }
         }
         game.playSfx && game.playSfx("hit");

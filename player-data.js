@@ -10,10 +10,11 @@ window.Progression = (() => {
   const WIN_REWARD = 30;
   const STARTING_COINS = PACK_COST;
   const RARITY_WEIGHTS = {
-    common: 60,
-    rare: 25,
-    epic: 10,
-    legendary: 5,
+    common: 56,
+    rare: 24,
+    epic: 12,
+    mythic: 6,
+    legendary: 2,
   };
   const CARD_RARITIES = {
     Warrior: "common",
@@ -39,11 +40,11 @@ window.Progression = (() => {
     Avenger: "epic",
     Necromancer: "epic",
     Tidewalker: "epic",
-    Shade: "epic",
-    Stalker: "epic",
-    Slicer: "epic",
-    Silencer: "epic",
-    Geomancer: "epic",
+    Shade: "mythic",
+    Stalker: "mythic",
+    Slicer: "mythic",
+    Silencer: "mythic",
+    Geomancer: "mythic",
     "Boxing Arena": "epic",
     Plague: "legendary",
     "Bounty Hunter": "legendary",

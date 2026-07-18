@@ -39,6 +39,7 @@ class Game {
     this.playerTeam = Config.TEAM.PLAYER;
     this.shadowRealmView = false;
     this.previewBiomeCenter = null;
+    this.renderFrame = null;
     this.teamDeaths = { [Config.TEAM.PLAYER]: 0, [Config.TEAM.AI]: 0 };
     this.matchUnits = []; // track all units that were in the match (including dead ones)
     this.draftedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
@@ -96,7 +97,11 @@ class Game {
           btn.classList.toggle('active', this.shadowRealmView);
           this.updateShadowToggleButton();
           this.applyBoardPerspective();
-          this.renderEntities();
+          if (this.renderFrame != null) cancelAnimationFrame(this.renderFrame);
+          this.renderFrame = requestAnimationFrame(() => {
+            this.renderEntities();
+            this.renderFrame = null;
+          });
         };
         this.updateShadowToggleButton();
       }
@@ -253,16 +258,17 @@ class Game {
       const rarity = this.getCardRarity(type);
       const role = kind === "biome" ? (def.shopLabel || "Biome") : this.getShopRoleSummary(type);
       const cardClass = kind === "biome" ? "Biome" : this.getUnitClass(type);
+      const description = owned ? (def.ability || def.desc || "") : "Locked until opened from a pack.";
       return `
         <div class="menu-card-tile rarity-${rarity}${owned ? "" : " locked"}" data-card-type="${type}">
           <div class="menu-card-head">
             <div class="menu-card-symbol ${this.getUnitVisualClass(type)}">${def.symbol}</div>
             <div>
               <div class="menu-card-name">${type}</div>
-              <div class="menu-card-meta">${role} | Cost ${def.cost || 0}</div>
+              <div class="menu-card-meta">${role}</div>
             </div>
           </div>
-          <div class="menu-card-meta">${owned ? (def.ability || def.desc || "") : "Locked until opened from a pack."}</div>
+          <div class="menu-card-meta menu-card-description">${description}</div>
           <div class="menu-card-badges">
             <span class="menu-badge">${owned ? `${copies} owned` : "Locked"}</span>
             <span class="menu-badge rarity ${rarity}">${this.formatRarity(type)}</span>
@@ -352,7 +358,7 @@ class Game {
           <select id="menu-card-class" class="shop-filter-select">${optionHTML(classes, filters.classValue, "All Classes")}</select>
           <select id="menu-card-cost" class="shop-filter-select">${optionHTML(costs, filters.costValue, "All Costs")}</select>
           <select id="menu-card-rarity" class="shop-filter-select">
-            ${optionHTML(["common", "rare", "epic", "legendary"], filters.rarityValue, "All Rarities")}
+            ${optionHTML(["common", "rare", "epic", "mythic", "legendary"], filters.rarityValue, "All Rarities")}
           </select>
           <select id="menu-card-ownership" class="shop-filter-select">
             <option value="owned" ${filters.ownership === "owned" ? "selected" : ""}>Owned</option>
@@ -703,7 +709,7 @@ class Game {
 
   getEffectiveApMax(unit) {
     if (!unit || unit.kind !== "unit") return unit && unit.apMax ? unit.apMax : 0;
-    return Math.max(0, (unit.apMax || 0) + (unit.apMaxBonus || 0));
+    return Math.max(0, (unit.apMax || 0) + (unit.apMaxBonus || 0) + (unit.tempApBonus || 0));
   }
 
   doesBiomeAffectUnit(def, unit) {
@@ -1375,6 +1381,8 @@ class Game {
     if (unit.inShadowRealm && (unit.shadowTurns || 0) > 0) {
       statuses.push(`Shadowed (${unit.shadowTurns})`);
     }
+    if ((unit.buffTurns || 0) > 0) push("Catalyzed", unit.buffTurns);
+    if ((unit.tempApBonus || 0) > 0) statuses.push(`Catalyzed (+${unit.tempApBonus} AP Max)`);
     if (unit.siegeTurns && unit.siegeTurns > 0) push("Sieged", unit.siegeTurns);
     if (unit.burnTurns && unit.burnTurns > 0) push("Burning", unit.burnTurns);
     if (unit.diseased && (unit.diseasedTurns || 0) > 0) push("Diseased", unit.diseasedTurns);
@@ -2102,14 +2110,18 @@ class Game {
     }
   }
 
+  getMoveDistanceLimit(unit) {
+    return Math.max(1, Number((unit && unit.move) || 1));
+  }
+
   getMoveTargets(unit) {
     if (unit.ap < 1) return [];
-    const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+    const maxSteps = this.getMoveDistanceLimit(unit);
     return this.getReachableTiles(unit, maxSteps);
   }
 
   getMoveHintTiles(unit) {
-    const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+    const maxSteps = this.getMoveDistanceLimit(unit);
     return this.getReachableTiles(unit, maxSteps);
   }
 
@@ -2529,7 +2541,7 @@ class Game {
           let actionTaken = false;
           if (moveTargets.includes(key) && this.occupants[r][c] == null) {
             const fromR = u.row, fromC = u.col;
-            const maxSteps = Math.min((u && u.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+            const maxSteps = this.getMoveDistanceLimit(u);
             const path = this.getMovePath(u, r, c, maxSteps);
             if (path && path.length) {
               await this.animateMove(u, path, { dash: false, stepDelay: 360 });
@@ -2823,6 +2835,10 @@ class Game {
       if (ent.guardTurns && ent.guardTurns > 0) {
         ent.guardTurns = Math.max(0, ent.guardTurns - 1);
       }
+      if (ent.buffTurns && ent.buffTurns > 0) {
+        ent.buffTurns = Math.max(0, ent.buffTurns - 1);
+        if (ent.buffTurns <= 0) ent.tempApBonus = 0;
+      }
       if (ent.silencedTurns && ent.silencedTurns > 0) {
         ent.silencedTurns = Math.max(0, ent.silencedTurns - 1);
       }
@@ -2851,6 +2867,10 @@ class Game {
       }
       if (ent.guardTurns && ent.guardTurns > 0) {
         ent.guardTurns = Math.max(0, ent.guardTurns - 1);
+      }
+      if (ent.buffTurns && ent.buffTurns > 0) {
+        ent.buffTurns = Math.max(0, ent.buffTurns - 1);
+        if (ent.buffTurns <= 0) ent.tempApBonus = 0;
       }
       if (ent.silencedTurns && ent.silencedTurns > 0) {
         ent.silencedTurns = Math.max(0, ent.silencedTurns - 1);
@@ -3709,7 +3729,7 @@ class Game {
 
   stepToward(sr, sc, tr, tc, unit) {
     const dummy = { ...unit, row: sr, col: sc };
-    const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+    const maxSteps = this.getMoveDistanceLimit(unit);
     dummy.movePattern = unit.movePattern || "orthogonal";
     const candidates = this.getReachableTiles(dummy, maxSteps);
     if (candidates.length === 0) return null;
@@ -3719,7 +3739,7 @@ class Game {
 
   stepTowardSmart(sr, sc, tr, tc, unit) {
     const dummy = { ...unit, row: sr, col: sc };
-    const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+    const maxSteps = this.getMoveDistanceLimit(unit);
     dummy.movePattern = unit.movePattern || "orthogonal";
     const candidates = this.getReachableTiles(dummy, maxSteps);
     if (candidates.length === 0) return null;
@@ -3747,7 +3767,7 @@ class Game {
 
   stepAway(sr, sc, er, ec, unit) {
     const dummy = { ...unit, row: sr, col: sc };
-    const maxSteps = Math.min((unit && unit.move) || 1, Config.MAX_MOVE_PER_ACTION || 3);
+    const maxSteps = this.getMoveDistanceLimit(unit);
     dummy.movePattern = unit.movePattern || "orthogonal";
     const candidates = this.getReachableTiles(dummy, maxSteps);
     if (candidates.length === 0) return null;
@@ -3860,15 +3880,15 @@ class Game {
           ["Movement", `${def.move || 0}`],
         ];
     body.innerHTML = `
-      <div class="card-details-header">
+      <div class="unit-header">
         <div class="card-details-icon ${this.getUnitVisualClass(type)}">${def.symbol || "?"}</div>
-        <div class="card-details-copy">
-          <div class="card-details-name">${type}</div>
-          <div class="card-details-desc">${def.ability || def.desc || "No description available."}</div>
+        <div class="unit-info">
+          <div class="unit-name">${type}</div>
+          <div class="unit-desc">${def.ability || def.desc || "No description available."}</div>
         </div>
       </div>
       <div class="details-section stats-section">
-        <div class="section-label">Stats</div>
+        <div class="section-label">${kind === "biome" ? "Biome Details" : "Stats"}</div>
         <ul class="list">
           ${statsRows.map(([label, value]) => `<li class="stat-card"><span class="stat-key">${label}</span><span class="stat-value-wrap"><span class="stat-value">${value}</span></span></li>`).join("")}
         </ul>
@@ -3877,8 +3897,15 @@ class Game {
   }
 
   renderMatchStats() {
-    const playerUnits = this.matchUnits.filter(u => u.team === Config.TEAM.PLAYER);
-    const aiUnits = this.matchUnits.filter(u => u.team === Config.TEAM.AI);
+    const sortUnits = (units) => units.slice().sort((a, b) => {
+      const killsDiff = Number(b.kills || 0) - Number(a.kills || 0);
+      if (killsDiff !== 0) return killsDiff;
+      const dmgDiff = Number(b.totalDamageDealt || 0) - Number(a.totalDamageDealt || 0);
+      if (dmgDiff !== 0) return dmgDiff;
+      return String(a.type || "").localeCompare(String(b.type || ""));
+    });
+    const playerUnits = sortUnits(this.matchUnits.filter(u => u.team === Config.TEAM.PLAYER));
+    const aiUnits = sortUnits(this.matchUnits.filter(u => u.team === Config.TEAM.AI));
 
     const renderTeamSection = (title, subtitle, units, toneClass) => {
       const rows = units.length > 0
