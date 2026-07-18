@@ -27,7 +27,7 @@
     desc: "Choose any tile in a straight line up to 3. Hit every enemy in that line, then dash to the last open tile before the block. Cooldown 3.",
     range: 3,
     rangePattern: "straight",
-    damage: 20,
+    damage: 30,
     piercing: true,
     piercingLabel: "Damages every enemy on the line",
     requiresTarget: true,

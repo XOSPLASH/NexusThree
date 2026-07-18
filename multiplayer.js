@@ -14,14 +14,6 @@ window.Multiplayer = (function() {
     turnIndicator: null
   };
 
-  function applySecondPlayerBonus() {
-    if (!game) return;
-    const bonusTeam = Config.TEAM.AI;
-    const boosted = (Config.ENERGY_START_AI || 0) + 1;
-    if (game.energy[bonusTeam] < boosted) game.energy[bonusTeam] = boosted;
-    if (game.energyGenerated[bonusTeam] < boosted) game.energyGenerated[bonusTeam] = boosted;
-  }
-
   function init(gameInstance) {
     game = gameInstance;
     UI.idDisplay = document.getElementById('peer-id-display');
@@ -65,7 +57,6 @@ window.Multiplayer = (function() {
       // We are the host (Player team)
       game.isMultiplayer = true;
       game.playerTeam = Config.TEAM.PLAYER;
-      applySecondPlayerBonus();
       UI.connectBtn.textContent = 'Connected (Host)';
       UI.connectBtn.disabled = true;
       UI.joinInput.style.display = 'none';

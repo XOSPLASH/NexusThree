@@ -9,7 +9,7 @@
     move: 3,
     cost: 6,
     symbol: "\uD83D\uDC64",
-    ability: "Shadow Step (Active): enter the Shadow Realm for 3 turns. Untargetable by opponents without Shadow presence.",
+    ability: "Enter the Shadow Realm",
     rangePattern: "orthogonal",
     movePattern: "orthogonal",
     leveling: {

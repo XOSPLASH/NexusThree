@@ -32,6 +32,9 @@ window.Progression = (() => {
     Sentinel: "rare",
     Ballista: "rare",
     Bulwark: "rare",
+    Forge: "rare",
+    Watchtower: "rare",
+    Sanctum: "rare",
     Druid: "epic",
     Avenger: "epic",
     Necromancer: "epic",
@@ -41,12 +44,9 @@ window.Progression = (() => {
     Slicer: "epic",
     Silencer: "epic",
     Geomancer: "epic",
+    "Boxing Arena": "epic",
     Plague: "legendary",
     "Bounty Hunter": "legendary",
-    Forge: "rare",
-    Watchtower: "rare",
-    Sanctum: "rare",
-    "Boxing Arena": "epic",
   };
 
   const safeParse = (raw) => {

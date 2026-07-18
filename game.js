@@ -40,6 +40,7 @@ class Game {
     this.shadowRealmView = false;
     this.previewBiomeCenter = null;
     this.teamDeaths = { [Config.TEAM.PLAYER]: 0, [Config.TEAM.AI]: 0 };
+    this.matchUnits = []; // track all units that were in the match (including dead ones)
     this.draftedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
     this.draft = {
       active: false,
@@ -473,6 +474,9 @@ class Game {
         const type = tile.dataset.cardType;
         if (!type) return;
         const kind = this.getCardKind(type);
+        const menuOverlay = document.getElementById("menu-overlay");
+        if (menuOverlay) menuOverlay.classList.add("hidden");
+        this.menuOpen = false;
         if (kind === "biome") {
           const def = window.Entities.biomeDefs[type];
           if (def) {
@@ -827,6 +831,12 @@ class Game {
         this.logEvent({ type: "error", msg: "Blocked spawn: Skeleton can only be summoned by Necromancer" });
         return;
       }
+    }
+    if (ent.kind === "unit") {
+      // Initialize stats for match tracking
+      ent.totalDamageDealt = 0;
+      ent.kills = 0;
+      this.matchUnits.push(ent);
     }
     this.entities.push(ent);
     if (ent.row != null && ent.col != null) {
@@ -1566,7 +1576,7 @@ class Game {
       const teamLabel = ent.kind === "biome_preview" ? "Preview" : (this.isMultiplayer ? (ent.team === this.playerTeam ? "Your" : "Enemy") : (ent.team === Config.TEAM.PLAYER ? "Player" : "AI"));
       nameEl.textContent = `${teamLabel} ${ent.type}`;
       descEl.textContent = ent.desc;
-      statsEl.innerHTML = `<li>Duration: ${ent.duration} turns</li>${ent.cost ? `<li>Cost: ${ent.cost}⚡</li>` : ""}`;
+      statsEl.innerHTML = `<li>Duration: ${ent.duration} turns</li>${ent.cost ? `<li>Cost: ${ent.cost}🪙</li>` : ""}`;
       return;
     }
 
@@ -1607,8 +1617,7 @@ class Game {
       const displayedRange = ent.range + rangeBonus;
       const effectiveApMax = this.getEffectiveApMax(ent);
       const rangePatternLabel = this.formatPatternLabel(ent.rangePattern || "square");
-      const throwerLabel = ent.thrower ? "thrower (attacks over walls)" : "";
-      const rangeSub = throwerLabel ? `${rangePatternLabel} • ${throwerLabel}` : rangePatternLabel;
+      const rangeSub = ent.thrower ? "Thrower" : rangePatternLabel;
       const damageValue = ent.type === "Slicer" ? "30%" : `${displayedDmg}`;
       const damageSub = ent.type === "Slicer" ? "current" : "";
       const stats = [
@@ -1621,7 +1630,7 @@ class Game {
       
       // Add cost if previewing from shop
       if (ent.cost !== undefined) {
-        stats.unshift(["Cost", `${ent.cost}⚡`]);
+        stats.unshift(["Cost", `${ent.cost}🪙`]);
       }
       for (const [k, v, b, sub] of stats) {
         const li = document.createElement("li");
@@ -2909,20 +2918,25 @@ class Game {
         effectiveDmg = Math.max(1, Math.floor(effectiveDmg * 0.8));
     }
     target.hp = Math.max(0, target.hp - effectiveDmg);
+    
+    // Track damage dealt by source
+    if (source && source.kind === "unit") {
+      source.totalDamageDealt += effectiveDmg;
+    }
+
     const cell = this.board.getCell(target.row, target.col);
     if (cell) {
       cell.classList.add("hit-anim");
       setTimeout(() => cell.classList.remove("hit-anim"), 360);
     }
-    if (target.kind === "base" && target.hp <= 0) {
-      this.checkWin();
-    }
-    this.playSfx && this.playSfx("hit");
     if (target.hp === 0 && before > 0) {
       if (target.kind === "unit") {
         const killer = source ? `${source.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${source.type}` : "Unknown";
         const victim = `${target.team === Config.TEAM.PLAYER ? "Player" : "AI"} ${target.type}`;
         this.logEvent({ type: "death", killer, victim });
+        if (source && source.kind === "unit") {
+          source.kills += 1;
+        }
         const bountyReward = (window.Entities && window.Entities.unitDefs && window.Entities.unitDefs[target.type] && window.Entities.unitDefs[target.type].bountyEnergyReward) || target.bountyEnergyReward || 0;
         if (bountyReward > 0) {
           const rewardTeam = target.team === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER;
@@ -3764,7 +3778,11 @@ class Game {
       o = document.createElement("div");
       o.id = "game-overlay";
       o.className = "overlay hidden";
-      o.innerHTML = `<div class="panel"><div id="overlay-msg"></div><button id="reset-btn" class="btn">Play Again</button></div>`;
+      o.innerHTML = `<div class="panel">
+          <div id="overlay-msg"></div>
+          <div id="match-stats"></div>
+          <button id="reset-btn" class="btn">Play Again</button>
+        </div>`;
       document.body.appendChild(o);
       const btn = o.querySelector("#reset-btn");
       btn.addEventListener("click", () => location.reload());
@@ -3772,9 +3790,49 @@ class Game {
     this.overlay = o;
   }
 
+  renderMatchStats() {
+    const statsDiv = document.getElementById("match-stats");
+    if (!statsDiv) return "";
+    const playerUnits = this.matchUnits.filter(u => u.team === Config.TEAM.PLAYER);
+    const aiUnits = this.matchUnits.filter(u => u.team === Config.TEAM.AI);
+
+    const playerStatsHTML = playerUnits.length > 0 ? `<h3>Player Team</h3>
+      <ul class="list stat-list">
+        ${playerUnits.map(u => `<li class="stat-card">
+          <div class="stat-head">
+            <span>${u.type}</span>
+          </div>
+          <div class="stat-values">
+            <div>Damage: ${u.totalDamageDealt}</div>
+            <div>Kills: ${u.kills}</div>
+          </div>
+        </li>`).join('')}
+      </ul>` : `<h3>Player Team</h3><p>No units</p>`;
+
+    const aiStatsHTML = aiUnits.length > 0 ? `<h3>Enemy Team</h3>
+      <ul class="list stat-list">
+        ${aiUnits.map(u => `<li class="stat-card">
+          <div class="stat-head">
+            <span>${u.type}</span>
+          </div>
+          <div class="stat-values">
+            <div>Damage: ${u.totalDamageDealt}</div>
+            <div>Kills: ${u.kills}</div>
+          </div>
+        </li>`).join('')}
+      </ul>` : `<h3>Enemy Team</h3><p>No units</p>`;
+
+    return playerStatsHTML + aiStatsHTML;
+  }
+
   showOverlay(msg) {
     const o = this.overlay; if (!o) return;
-    o.querySelector("#overlay-msg").textContent = msg;
+    const msgDiv = o.querySelector("#overlay-msg");
+    const statsDiv = o.querySelector("#match-stats");
+    if (msgDiv) msgDiv.textContent = msg;
+    if (statsDiv && this.matchResolved) {
+      statsDiv.innerHTML = this.renderMatchStats();
+    }
     o.classList.remove("hidden");
   }
 
@@ -4814,17 +4872,17 @@ Game.prototype.getAIDraftRolePhrase = function(type) {
   }
   const cls = this.getUnitClass(type);
   const roles = {
-    Tank: "give the draft a real anchor",
-    Marksman: "create ranged pressure that punishes slow setups",
-    Support: "make longer fights safer for the pieces I already have",
-    Assassin: "threaten the backline instead of letting it free-fire",
-    Control: "break up your clean turns and force awkward trades",
-    Fighter: "contest space early and keep tempo from slipping away",
-    Breaker: "open a way through bulky targets",
-    Disruptor: "cut into synergy before it gets comfortable",
-    Artillery: "apply long-range pressure while ignoring wall lines"
+    Tank: "Give the draft a real anchor",
+    Marksman: "Create ranged pressure that punishes slow setups",
+    Support: "Make longer fights safer for the pieces I already have",
+    Assassin: "Threaten the backline instead of letting it free-fire",
+    Control: "Break up your clean turns and force awkward trades",
+    Fighter: "Contest space early and keep tempo from slipping away",
+    Breaker: "Open a way through bulky targets",
+    Disruptor: "Cut into synergy before it gets comfortable",
+    Artillery: "Apply long-range pressure while ignoring wall lines"
   };
-  return roles[cls] || "keep the draft flexible";
+  return roles[cls] || "Keep the draft flexible";
 };
 
 Game.prototype.getAIDraftCounterTargetsForPick = function(type) {
@@ -5231,6 +5289,14 @@ Game.prototype.chooseAIDraftPick = function() {
 Game.prototype.completeDraft = function() {
   this.draft.active = false;
   this.draft.completed = true;
+  // Set starting energy correctly: first player gets 2, second gets 3
+  const firstTeam = this.draft.firstTeam;
+  const secondTeam = this.draft.secondTeam;
+  this.energy[firstTeam] = Config.ENERGY_START_PLAYER;
+  this.energy[secondTeam] = Config.ENERGY_START_PLAYER + 1;
+  this.energyGenerated[firstTeam] = this.energy[firstTeam];
+  this.energyGenerated[secondTeam] = this.energy[secondTeam];
+
   const overlay = document.getElementById("draft-overlay");
   if (overlay) overlay.classList.add("hidden");
   this.logEvent({ type: "status", msg: "Draft complete. Unit shop is now locked to drafted rosters." });

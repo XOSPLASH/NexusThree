@@ -67,7 +67,7 @@
       id: "rune_mending",
       name: "Mending",
       cost: 4,
-      desc: "Heal 10 HP at the start of each of this unit's turns.",
+      desc: "+10 HP per turn",
       apply: () => {},
       onTurnStart: (u) => { u.hp = Math.min(u.maxHp, u.hp + 10); },
       healPerTurn: 10,
