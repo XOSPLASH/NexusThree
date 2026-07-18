@@ -70,6 +70,7 @@ class Game {
     this.updateUnitPanel(null);
     this.renderLog();
     this.ensureOverlay();
+    this.ensureCardDetailsOverlay();
     this.renderBuyControls();
     this.repositionMPUI();
     this.setupDraftSystem();
@@ -468,15 +469,16 @@ class Game {
     if (costSelect) costSelect.onchange = update;
     if (raritySelect) raritySelect.onchange = update;
     if (ownershipSelect) ownershipSelect.onchange = update;
-    // Add card click handlers
+    const menuOverlay = document.getElementById("menu-overlay");
     document.querySelectorAll(".menu-card-tile").forEach((tile) => {
-      tile.onclick = (e) => {
+      const handleSelection = (event) => {
+        if (event && event.type === "keydown" && !(event.key === "Enter" || event.key === " ")) return;
+        if (event && event.type === "keydown") event.preventDefault();
         const type = tile.dataset.cardType;
         if (!type) return;
         const kind = this.getCardKind(type);
-        const menuOverlay = document.getElementById("menu-overlay");
-        if (menuOverlay) menuOverlay.classList.add("hidden");
-        this.menuOpen = false;
+        this.menuOpen = true;
+        if (menuOverlay) menuOverlay.classList.remove("hidden");
         if (kind === "biome") {
           const def = window.Entities.biomeDefs[type];
           if (def) {
@@ -517,7 +519,16 @@ class Game {
             });
           }
         }
+        this.showCardDetailsModal(type);
       };
+      tile.onclick = (e) => {
+        e.preventDefault();
+        handleSelection(e);
+      };
+      tile.onkeydown = (e) => handleSelection(e);
+      tile.tabIndex = 0;
+      tile.setAttribute("role", "button");
+      tile.setAttribute("aria-label", `View details for ${tile.dataset.cardType || "card"}`);
     });
   }
 
@@ -610,8 +621,12 @@ class Game {
     return amount;
   }
 
+  getLocalTeam() {
+    return this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
+  }
+
   isFriendlyTeam(team) {
-    const localTeam = this.isMultiplayer ? this.playerTeam : Config.TEAM.PLAYER;
+    const localTeam = this.getLocalTeam();
     return team === localTeam;
   }
 
@@ -876,10 +891,11 @@ class Game {
         else if (t === "nexus") {
           cell.classList.add("terrain-nexus");
           const owner = this.nexusOwners[r][c];
-          if (owner === Config.TEAM.PLAYER) cell.classList.add("terrain-nexus-player");
-          else if (owner === Config.TEAM.AI) cell.classList.add("terrain-nexus-ai");
+          const localTeam = this.getLocalTeam();
+          if (owner === localTeam) cell.classList.add("terrain-nexus-player");
+          else if (owner != null) cell.classList.add("terrain-nexus-ai");
           const icon = document.createElement("span");
-          icon.className = `nexus-icon ${owner == null ? "nexus-neutral" : (owner === Config.TEAM.PLAYER ? "nexus-player" : "nexus-ai")}`;
+          icon.className = `nexus-icon ${owner == null ? "nexus-neutral" : (owner === localTeam ? "nexus-player" : "nexus-ai")}`;
           icon.textContent = "🔷"; // Larger blue diamond shape
           cell.appendChild(icon);
         }
@@ -1560,7 +1576,8 @@ class Game {
       // If it's a nexus, add owner info!
       if (this.terrain[ent.row][ent.col] === "nexus") {
         const owner = this.nexusOwners[ent.row][ent.col];
-        const ownerLabel = owner == null ? "Neutral" : (owner === Config.TEAM.PLAYER ? "You" : "Enemy");
+        const localTeam = this.getLocalTeam();
+        const ownerLabel = owner == null ? "Neutral" : (owner === localTeam ? "You" : "Enemy");
         rows.push(["Owned By", ownerLabel]);
       }
       for (const [k, v] of rows) {
@@ -3778,10 +3795,18 @@ class Game {
       o = document.createElement("div");
       o.id = "game-overlay";
       o.className = "overlay hidden";
-      o.innerHTML = `<div class="panel">
-          <div id="overlay-msg"></div>
-          <div id="match-stats"></div>
-          <button id="reset-btn" class="btn">Play Again</button>
+      o.innerHTML = `
+        <div class="end-screen-panel">
+          <div class="end-screen-header">
+            <div class="end-screen-kicker">Match Complete</div>
+            <div id="overlay-msg" class="end-screen-title"></div>
+          </div>
+          <div class="end-screen-body">
+            <div id="match-stats" class="match-summary-grid"></div>
+          </div>
+          <div class="end-screen-actions">
+            <button id="reset-btn" class="btn btn-primary">Play Again</button>
+          </div>
         </div>`;
       document.body.appendChild(o);
       const btn = o.querySelector("#reset-btn");
@@ -3790,39 +3815,104 @@ class Game {
     this.overlay = o;
   }
 
+  ensureCardDetailsOverlay() {
+    let overlay = document.getElementById("card-details-overlay");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "card-details-overlay";
+      overlay.className = "overlay card-details-overlay hidden";
+      overlay.innerHTML = `
+        <div class="card-details-panel panel">
+          <div class="card-details-head">
+            <div class="panel-title">Card Details</div>
+            <button id="card-details-close" class="btn btn-secondary">Close</button>
+          </div>
+          <div id="card-details-body" class="card-details-body"></div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) overlay.classList.add("hidden");
+      });
+      const closeBtn = overlay.querySelector("#card-details-close");
+      if (closeBtn) closeBtn.addEventListener("click", () => overlay.classList.add("hidden"));
+    }
+    this.cardDetailsOverlay = overlay;
+    return overlay;
+  }
+
+  showCardDetailsModal(type) {
+    const overlay = this.ensureCardDetailsOverlay();
+    const body = overlay.querySelector("#card-details-body");
+    const def = this.getCardDef(type);
+    if (!body || !def) return;
+    const kind = this.getCardKind(type);
+    const statsRows = kind === "biome"
+      ? [
+          ["Cost", `${def.cost || 0}🪙`],
+          ["Duration", `${def.duration || 0} turns`],
+          ["Effect", def.desc || "Board effect"],
+        ]
+      : [
+          ["Cost", `${def.cost || 0}🪙`],
+          ["HP", `${def.hp || 0}`],
+          ["Damage", `${def.dmg || 0}`],
+          ["Range", `${def.range || 0}`],
+          ["Movement", `${def.move || 0}`],
+        ];
+    body.innerHTML = `
+      <div class="card-details-header">
+        <div class="card-details-icon ${this.getUnitVisualClass(type)}">${def.symbol || "?"}</div>
+        <div class="card-details-copy">
+          <div class="card-details-name">${type}</div>
+          <div class="card-details-desc">${def.ability || def.desc || "No description available."}</div>
+        </div>
+      </div>
+      <div class="details-section stats-section">
+        <div class="section-label">Stats</div>
+        <ul class="list">
+          ${statsRows.map(([label, value]) => `<li class="stat-card"><span class="stat-key">${label}</span><span class="stat-value-wrap"><span class="stat-value">${value}</span></span></li>`).join("")}
+        </ul>
+      </div>`;
+    overlay.classList.remove("hidden");
+  }
+
   renderMatchStats() {
-    const statsDiv = document.getElementById("match-stats");
-    if (!statsDiv) return "";
     const playerUnits = this.matchUnits.filter(u => u.team === Config.TEAM.PLAYER);
     const aiUnits = this.matchUnits.filter(u => u.team === Config.TEAM.AI);
 
-    const playerStatsHTML = playerUnits.length > 0 ? `<h3>Player Team</h3>
-      <ul class="list stat-list">
-        ${playerUnits.map(u => `<li class="stat-card">
-          <div class="stat-head">
-            <span>${u.type}</span>
+    const renderTeamSection = (title, subtitle, units, toneClass) => {
+      const rows = units.length > 0
+        ? units.map((u) => `
+            <div class="match-unit-card">
+              <div class="match-unit-head">
+                <div class="match-unit-title">${u.type}</div>
+                <div class="match-unit-badge">${u.kind === "unit" ? "Card" : "Unit"}</div>
+              </div>
+              <div class="match-unit-metrics">
+                <div class="match-metric"><span>Damage</span><strong>${Number(u.totalDamageDealt || 0)}</strong></div>
+                <div class="match-metric"><span>Kills</span><strong>${Number(u.kills || 0)}</strong></div>
+                <div class="match-metric"><span>HP</span><strong>${u.maxHp != null ? `${u.hp || 0}/${u.maxHp}` : "—"}</strong></div>
+              </div>
+            </div>`).join("")
+        : `<div class="match-empty">No cards were deployed for this side.</div>`;
+      return `
+        <section class="match-team-card ${toneClass}">
+          <div class="match-team-head">
+            <div>
+              <div class="match-team-title">${title}</div>
+              <div class="match-team-subtitle">${subtitle}</div>
+            </div>
+            <div class="match-team-badge">${units.length} card${units.length === 1 ? "" : "s"}</div>
           </div>
-          <div class="stat-values">
-            <div>Damage: ${u.totalDamageDealt}</div>
-            <div>Kills: ${u.kills}</div>
-          </div>
-        </li>`).join('')}
-      </ul>` : `<h3>Player Team</h3><p>No units</p>`;
+          <div class="match-team-list">${rows}</div>
+        </section>`;
+    };
 
-    const aiStatsHTML = aiUnits.length > 0 ? `<h3>Enemy Team</h3>
-      <ul class="list stat-list">
-        ${aiUnits.map(u => `<li class="stat-card">
-          <div class="stat-head">
-            <span>${u.type}</span>
-          </div>
-          <div class="stat-values">
-            <div>Damage: ${u.totalDamageDealt}</div>
-            <div>Kills: ${u.kills}</div>
-          </div>
-        </li>`).join('')}
-      </ul>` : `<h3>Enemy Team</h3><p>No units</p>`;
-
-    return playerStatsHTML + aiStatsHTML;
+    return `
+      <div class="match-summary-shell">
+        ${renderTeamSection("Player Team", "Your roster impact", playerUnits, "team-player")}
+        ${renderTeamSection("Enemy Team", "Opponent roster impact", aiUnits, "team-ai")}
+      </div>`;
   }
 
   showOverlay(msg) {

@@ -35,6 +35,17 @@
       desc: "+1 Max AP",
       apply: (u) => { u.apMax += 1; u.ap += 1; },
     },
+        
+    {
+      id: "rune_mending",
+      name: "Mending",
+      cost: 4,
+      desc: "+10 HP per turn",
+      apply: () => {},
+      onTurnStart: (u) => { u.hp = Math.min(u.maxHp, u.hp + 10); },
+      healPerTurn: 10,
+    },
+
     {
       id: "rune_rampage",
       name: "Rampage",
@@ -42,6 +53,7 @@
       desc: "+40 Damage, -30 Max HP",
       apply: (u) => { u.maxHp -= 30; u.hp = Math.max(1, u.hp - 30); u.dmg += 40; },
     },
+    
     {
       id: "rune_deft",
       name: "Deft",
@@ -63,14 +75,6 @@
         }
       }
     },
-    {
-      id: "rune_mending",
-      name: "Mending",
-      cost: 4,
-      desc: "+10 HP per turn",
-      apply: () => {},
-      onTurnStart: (u) => { u.hp = Math.min(u.maxHp, u.hp + 10); },
-      healPerTurn: 10,
-    }
+
   ];
 })();

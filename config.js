@@ -10,7 +10,7 @@ window.Config = {
   ENERGY_START_GAIN: 3,
   ENERGY_GAIN_CAP: 6,
   ENERGY_START_PLAYER: 2,
-  ENERGY_START_AI: 2,
+  ENERGY_START_AI: 3,
   FEATURES: {
     biomeImmediate: true,
     marksmanWaterWalker: true,
