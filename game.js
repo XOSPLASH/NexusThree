@@ -895,14 +895,22 @@ class Game {
         else if (t === "fortwall") cell.classList.add("terrain-fortwall");
         else if (t === "bridge") cell.classList.add("terrain-bridge");
         else if (t === "nexus") {
-          cell.classList.add("terrain-nexus");
           const owner = this.nexusOwners[r][c];
           const localTeam = this.getLocalTeam();
+          // Clear any prior terrain class, in case of stale state
+          cell.classList.remove("terrain-nexus", "terrain-nexus-player", "terrain-nexus-ai");
+          cell.classList.add("terrain-nexus");
           if (owner === localTeam) cell.classList.add("terrain-nexus-player");
           else if (owner != null) cell.classList.add("terrain-nexus-ai");
           const icon = document.createElement("span");
           icon.className = `nexus-icon ${owner == null ? "nexus-neutral" : (owner === localTeam ? "nexus-player" : "nexus-ai")}`;
-          icon.textContent = "🔷"; // Larger blue diamond shape
+          if (owner === null) {
+            icon.textContent = "⬜";
+          } else if (owner === localTeam) {
+            icon.textContent = "🔷";
+          } else {
+            icon.textContent = "🟥";
+          }
           cell.appendChild(icon);
         }
         if (t === "wall" || t === "bridge" || t === "fortwall") {
@@ -3896,11 +3904,50 @@ class Game {
       `;
     } else {
       const defUnit = window.Entities.unitDefs[type];
-      const apMax = defUnit.apMax || 2;
       const rangePatternLabel = this.formatPatternLabel(defUnit.rangePattern || "square");
       const rangeSub = defUnit.thrower ? "Thrower" : rangePatternLabel;
       const damageValue = type === "Slicer" ? "30%" : `${defUnit.dmg || 0}`;
       const damageSub = type === "Slicer" ? "current" : "";
+      const dummyUnit = {
+        kind: "unit",
+        type: type,
+        team: Config.TEAM.PLAYER,
+        hp: defUnit.hp,
+        maxHp: defUnit.hp,
+        range: defUnit.range,
+        dmg: defUnit.dmg,
+        move: defUnit.move,
+        rangePattern: defUnit.rangePattern,
+        movePattern: defUnit.movePattern || "orthogonal",
+        abilityCooldowns: {},
+        cooldownMods: {},
+        globalCooldownMod: 0,
+        ap: defUnit.apMax || 2,
+        apMax: defUnit.apMax || 2,
+        runes: []
+      };
+      const abilities = (window.Abilities && window.Abilities[type]) || [];
+      const abilityHTML = abilities.length ? `
+        <div class="details-section" style="margin-top: 16px;">
+          <div class="section-label">Abilities</div>
+          <ul id="abilities-list" style="margin-top: 8px; padding: 0; list-style: none; display: grid; gap: 12px;">
+            ${abilities.map(a => {
+              const detailLines = this.getAbilityDetailLines(dummyUnit, a);
+              return `
+                <li class="panel" style="padding: 16px; border-radius: 12px; border: 1px solid #1f2442; background: #0f1328;">
+                  <div class="unit-name" style="display:flex; justify-content:space-between; font-weight: 700; font-size: 15px; margin-bottom: 4px;">
+                    ${a.name}
+                  </div>
+                  <div class="unit-desc" style="color: #9aa3b2; font-size: 12px; line-height: 1.3; margin-bottom: 8px;">${a.desc}</div>
+                  <div style="display:grid; gap:4px; font-size:11px;">
+                    ${detailLines.map(([k, v]) => `<div class="ability-meta-row" style="display:flex; justify-content:space-between; padding:4px 0; border-top: 1px solid rgba(148,163,184,0.12);"><span class="ability-meta-key" style="color: var(--muted); font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; font-size:10px;">${k}</span><span class="ability-meta-value" style="color: var(--text); font-weight:700; text-align:right;">${v}</span></div>`).join("")}
+                  </div>
+                </li>
+              `;
+            }).join("")}
+          </ul>
+        </div>
+      ` : "";
       body.innerHTML = `
         <div class="unit-header">
           <div class="unit-icon ${this.getUnitVisualClass(type)}">${defUnit.symbol || "?"}</div>
@@ -3945,12 +3992,9 @@ class Game {
                 <span class="muted-sub">${this.formatPatternLabel(defUnit.movePattern || "orthogonal")}</span>
               </span>
             </li>
-            <li class="stat-card stat-card-ap">
-              <span class="stat-key">AP</span>
-              <span class="stat-value">${apMax}/${apMax} <span class="ap-pips">${Array.from({length: apMax}, () => `<span class="ap-pip"></span>`).join('')}</span></span>
-            </li>
           </ul>
         </div>
+        ${abilityHTML}
       `;
     }
 
