@@ -6,8 +6,8 @@ const makeBase = (team, row, col) => ({
   team,
   row,
   col,
-  hp: 20,
-  maxHp: 20,
+  hp: 200,
+  maxHp: 200,
   symbol: team === "P" ? "🏰" : "⛩️",
 });
 

@@ -5,8 +5,8 @@ window.Progression = (() => {
   const RESET_MARKER = "starter-defaults-manual-reset-2026-07-09";
   const STORAGE_PREFIX = "NexusThree.progression.";
   const STARTER_CARDS = ["Warrior", "Archer", "Mage", "Builder", "Cleric"];
-  const PACK_COST = 60;
-  const PACK_SIZE = 3;
+  const PACK_COST = 30;
+  const PACK_SIZE = 5;
   const WIN_REWARD = 30;
   const STARTING_COINS = PACK_COST;
   const RARITY_WEIGHTS = {

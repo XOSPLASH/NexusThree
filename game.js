@@ -3866,33 +3866,94 @@ class Game {
     const def = this.getCardDef(type);
     if (!body || !def) return;
     const kind = this.getCardKind(type);
-    const statsRows = kind === "biome"
-      ? [
-          ["Cost", `${def.cost || 0}🪙`],
-          ["Duration", `${def.duration || 0} turns`],
-          ["Effect", def.desc || "Board effect"],
-        ]
-      : [
-          ["Cost", `${def.cost || 0}🪙`],
-          ["HP", `${def.hp || 0}`],
-          ["Damage", `${def.dmg || 0}`],
-          ["Range", `${def.range || 0}`],
-          ["Movement", `${def.move || 0}`],
-        ];
-    body.innerHTML = `
-      <div class="unit-header">
-        <div class="card-details-icon ${this.getUnitVisualClass(type)}">${def.symbol || "?"}</div>
-        <div class="unit-info">
-          <div class="unit-name">${type}</div>
-          <div class="unit-desc">${def.ability || def.desc || "No description available."}</div>
+
+    if (kind === "biome") {
+      body.innerHTML = `
+        <div class="unit-header">
+          <div class="unit-icon ${this.getUnitVisualClass(type)}">${def.symbol || "?"}</div>
+          <div class="unit-info">
+            <div class="unit-name">${type}</div>
+            <div class="unit-desc">${def.desc || "No description available."}</div>
+          </div>
         </div>
-      </div>
-      <div class="details-section stats-section">
-        <div class="section-label">${kind === "biome" ? "Biome Details" : "Stats"}</div>
-        <ul class="list">
-          ${statsRows.map(([label, value]) => `<li class="stat-card"><span class="stat-key">${label}</span><span class="stat-value-wrap"><span class="stat-value">${value}</span></span></li>`).join("")}
-        </ul>
-      </div>`;
+        <div class="details-section stats-section">
+          <div class="section-label">Biome Details</div>
+          <ul id="stats-list">
+            <li class="stat-card">
+              <span class="stat-key">Cost</span>
+              <span class="stat-value-wrap">
+                <span class="stat-value">${def.cost || 0}🪙</span>
+              </span>
+            </li>
+            <li class="stat-card">
+              <span class="stat-key">Duration</span>
+              <span class="stat-value-wrap">
+                <span class="stat-value">${def.duration || 0} turns</span>
+              </span>
+            </li>
+          </ul>
+        </div>
+      `;
+    } else {
+      const defUnit = window.Entities.unitDefs[type];
+      const apMax = defUnit.apMax || 2;
+      const rangePatternLabel = this.formatPatternLabel(defUnit.rangePattern || "square");
+      const rangeSub = defUnit.thrower ? "Thrower" : rangePatternLabel;
+      const damageValue = type === "Slicer" ? "30%" : `${defUnit.dmg || 0}`;
+      const damageSub = type === "Slicer" ? "current" : "";
+      body.innerHTML = `
+        <div class="unit-header">
+          <div class="unit-icon ${this.getUnitVisualClass(type)}">${defUnit.symbol || "?"}</div>
+          <div class="unit-info">
+            <div class="unit-name">${type}</div>
+            <div class="unit-desc">${defUnit.ability || "No description available."}</div>
+          </div>
+        </div>
+        <div class="details-section stats-section">
+          <div class="section-label">Stats</div>
+          <ul id="stats-list">
+            <li class="stat-card">
+              <span class="stat-key">Cost</span>
+              <span class="stat-value-wrap">
+                <span class="stat-value">${defUnit.cost || 0}🪙</span>
+              </span>
+            </li>
+            <li class="stat-card">
+              <span class="stat-key">HP</span>
+              <span class="stat-value-wrap">
+                <span class="stat-value">${defUnit.hp || 0}</span>
+              </span>
+            </li>
+            <li class="stat-card${damageSub ? ' stat-card-pattern' : ''}">
+              <span class="stat-key">Damage</span>
+              <span class="stat-value-wrap">
+                <span class="stat-value">${damageValue}</span>
+                ${damageSub ? `<span class="muted-sub">${damageSub}</span>` : ""}
+              </span>
+            </li>
+            <li class="stat-card stat-card-pattern">
+              <span class="stat-key">Range</span>
+              <span class="stat-value-wrap">
+                <span class="stat-value">${defUnit.range || 0}</span>
+                <span class="muted-sub">${rangeSub}</span>
+              </span>
+            </li>
+            <li class="stat-card stat-card-pattern">
+              <span class="stat-key">Movement</span>
+              <span class="stat-value-wrap">
+                <span class="stat-value">${defUnit.move || 0}</span>
+                <span class="muted-sub">${this.formatPatternLabel(defUnit.movePattern || "orthogonal")}</span>
+              </span>
+            </li>
+            <li class="stat-card stat-card-ap">
+              <span class="stat-key">AP</span>
+              <span class="stat-value">${apMax}/${apMax} <span class="ap-pips">${Array.from({length: apMax}, () => `<span class="ap-pip"></span>`).join('')}</span></span>
+            </li>
+          </ul>
+        </div>
+      `;
+    }
+
     overlay.classList.remove("hidden");
   }
 
@@ -4479,17 +4540,18 @@ Game.prototype.applyNexusEffects = function(team) {
     }
   }
   if (owned <= 0) return;
+  const damage = owned * 20;
   const opp = team === Config.TEAM.PLAYER ? Config.TEAM.AI : Config.TEAM.PLAYER;
   const base = this.entities.find(e => e.kind === "base" && e.team === opp);
   if (base) {
-    this.applyDamage(base, owned, null);
+    this.applyDamage(base, damage, null);
     let teamName = team === Config.TEAM.PLAYER ? "Player" : "AI";
     let oppName = opp === Config.TEAM.PLAYER ? "Player" : "AI";
     if (this.isMultiplayer) {
       teamName = team === this.playerTeam ? "Your" : "Enemy";
       oppName = opp === this.playerTeam ? "Your" : "Enemy";
     }
-    this.logEvent({ type: "nexus", msg: `${teamName} nexus(es) dealt ${owned} damage to ${oppName} base` });
+    this.logEvent({ type: "nexus", msg: `${teamName} nexus(es) dealt ${damage} damage to ${oppName} base` });
     this.renderEntities(); // Refresh base health bars
   }
 };
