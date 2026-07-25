@@ -77,6 +77,7 @@ class Game {
     this.setupDraftSystem();
     this.showMainMenu();
     this.saveProgressionState();
+    this.updateHeaderVisibility();
     
     if (window.Multiplayer) {
       window.Multiplayer.init(this);
@@ -118,6 +119,13 @@ class Game {
       btn.textContent = "Shadow Realm";
       btn.title = "Switch to Shadow Realm View";
     }
+  }
+
+  updateHeaderVisibility() {
+    const header = document.querySelector(".app-header");
+    if (!header) return;
+    const inGameSession = !this.menuOpen && !this.matchResolved;
+    header.classList.toggle("in-game", inGameSession);
   }
 
   repositionMPUI() {
@@ -399,6 +407,7 @@ class Game {
     const overlay = document.getElementById("menu-overlay");
     if (!overlay) return;
     this.menuOpen = true;
+    this.updateHeaderVisibility();
     if (view) this.menuView = view;
     const state = this.getProgressionState();
     const viewHTML = this.menuView === "collection"
@@ -579,6 +588,7 @@ class Game {
     const overlay = document.getElementById("menu-overlay");
     if (overlay) overlay.classList.add("hidden");
     this.menuOpen = false;
+    this.updateHeaderVisibility();
   }
 
   beginFromMenu(mode, options) {
@@ -3789,6 +3799,7 @@ class Game {
     const aBase = this.entities.find(e => e.kind === "base" && e.team === Config.TEAM.AI);
     if (pBase.hp <= 0) {
       this.matchResolved = true;
+      this.updateHeaderVisibility();
       const localWon = this.isMultiplayer ? this.playerTeam === Config.TEAM.AI : false;
       const winner = this.isMultiplayer ? (localWon ? "YOU WIN!" : "ENEMY WINS!") : "AI WINS!";
       if (localWon) {
@@ -3800,6 +3811,7 @@ class Game {
       this.logEvent({ type: "status", msg: winner });
     } else if (aBase.hp <= 0) {
       this.matchResolved = true;
+      this.updateHeaderVisibility();
       const localWon = this.isMultiplayer ? this.playerTeam === Config.TEAM.PLAYER : true;
       const winner = this.isMultiplayer ? (localWon ? "YOU WIN!" : "ENEMY WINS!") : "PLAYER WINS!";
       if (localWon) {
@@ -4732,6 +4744,7 @@ Game.prototype.startDraft = function(mode, options) {
     : Math.max(1, Math.min(8, Math.floor(Math.max(0, defaultPoolSize) / 2)));
   this.hideMainMenu();
   this.matchResolved = false;
+  this.updateHeaderVisibility();
   this.draftedUnits = { [Config.TEAM.PLAYER]: new Set(), [Config.TEAM.AI]: new Set() };
   this.aiDraftNotes = { summary: "", entries: [] };
   if (draftMode === "ai" && this.aiDraftLoaners.length) {

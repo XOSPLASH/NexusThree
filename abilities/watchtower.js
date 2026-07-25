@@ -7,7 +7,7 @@
     cost: 6,
     symbol: "🗼",
     color: "#60a5fa",
-    desc: "A high vantage point for sharpshooters. Increases attack range by 1 for all Marksman units within the area.",
+    desc: "A high vantage point for sharpshooters.",
     shopLabel: "Range Boost",
     effectType: "stat_buff",
     stat: "range",

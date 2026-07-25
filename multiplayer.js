@@ -1,5 +1,5 @@
 /**
- * Multiplayer management for NexusThree using PeerJS.
+ * Multiplayer management for StackAttack using PeerJS.
  */
 window.Multiplayer = (function() {
   let peer = null;
